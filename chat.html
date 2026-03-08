@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Hello Machi Community Chat</title>
+    <!-- socket.io loaded from CDN for reliability -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        :root {
+            --accent-gold: #FFD700;
+            --bg-dark: #0a0a0a;
+            --glass-white: rgba(255, 255, 255, 0.05);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: var(--bg-dark);
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            padding: 15px;
+            background: rgba(20, 20, 20, 0.8);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-header h3 {
+            margin: 0;
+            font-size: 1.1rem;
+        }
+
+        .live-indicator {
+            color: #22c55e;
+            font-size: 0.7rem;
+            font-weight: bold;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .message {
+            background: var(--glass-white);
+            padding: 10px 14px;
+            border-radius: 15px;
+            max-width: 85%;
+            animation: fadeIn 0.3s ease-out;
+            position: relative;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message .user {
+            color: var(--accent-gold);
+            font-weight: bold;
+            font-size: 0.8rem;
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        .message .text {
+            font-size: 0.95rem;
+            line-height: 1.4;
+        }
+
+        .message .time {
+            font-size: 0.7rem;
+            color: #555;
+            display: block;
+            text-align: right;
+            margin-top: 4px;
+        }
+
+        .chat-input-area {
+            padding: 12px;
+            background: rgba(15, 15, 15, 0.9);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            gap: 10px;
+        }
+
+        input {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 10px 15px;
+            color: #fff;
+            outline: none;
+            font-size: 0.95rem;
+        }
+
+        button {
+            background: var(--accent-gold);
+            border: none;
+            border-radius: 20px;
+            padding: 0 20px;
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        /* Skeleton Loader */
+        .loading {
+            text-align: center;
+            color: #555;
+            margin-top: 20px;
+            font-size: 0.8rem;
+        }
+
+        .error-banner {
+            background: rgba(255, 50, 50, 0.15);
+            border: 1px solid rgba(255, 50, 50, 0.3);
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin: 12px;
+            color: #ff6b6b;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="chat-header">
+        <div>
+            <h3>Community Chat</h3>
+            <span class="live-indicator">● LIVE STUDIO</span>
+        </div>
+        <div style="font-size: 0.8rem; color: #777;">
+            Name: <span id="currentNick" style="color: var(--accent-gold);">Machi User</span>
+        </div>
+    </div>
+
+    <div class="chat-messages" id="chatMessages">
+        <div class="loading">Connecting to studio...</div>
+    </div>
+
+    <div class="chat-input-area">
+        <input type="text" id="chatInput" placeholder="Type a message...">
+        <button id="sendMessageBtn">SEND</button>
+    </div>
+
+    <script>
+        let socket;
+        let userName = localStorage.getItem('machi-nickname') || 'Machi User';
+        const chatInput = document.getElementById('chatInput');
+        const sendBtn = document.getElementById('sendMessageBtn');
+        const chatMessages = document.getElementById('chatMessages');
+        const currentNickDisplay = document.getElementById('currentNick');
+
+        if (currentNickDisplay) currentNickDisplay.innerText = userName;
+
+        const SERVER_URL = 'https://hello-machi-backend.onrender.com';
+
+        function showError(message) {
+            const existing = document.querySelector('.error-banner');
+            if (existing) existing.remove();
+            const banner = document.createElement('div');
+            banner.className = 'error-banner';
+            banner.textContent = message;
+            chatMessages.prepend(banner);
+        }
+
+        function setupSocket() {
+            console.log('[Chat] Connecting to:', SERVER_URL);
+            socket = io(SERVER_URL, {
+                transports: ['websocket', 'polling'],
+                reconnectionAttempts: 5
+            });
+
+            socket.on('connect', () => {
+                console.log('[Chat] Connected ✓');
+                const existing = document.querySelector('.error-banner');
+                if (existing) existing.remove();
+            });
+
+            socket.on('connect_error', (err) => {
+                console.warn('[Chat] Error:', err);
+                showError('⚠️ Cannot connect to chat server. Check your internet or try again.');
+            });
+
+            socket.on('chat_history', (history) => {
+                chatMessages.innerHTML = '';
+                history.forEach(appendMessage);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            });
+
+            socket.on('new_message', (msg) => {
+                appendMessage(msg);
+                // Robust Auto-Scroll
+                setTimeout(() => {
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                }, 100);
+            });
+        }
+        setupSocket();
+
+        function appendMessage(msg) {
+            const div = document.createElement('div');
+            div.className = 'message';
+            div.innerHTML = `
+    <span class="user">${msg.user}</span>
+    <span class="text">${msg.text}</span>
+    <span class="time">${msg.time}</span>
+    `;
+            chatMessages.appendChild(div);
+        }
+
+        sendBtn.onclick = () => {
+            const text = chatInput.value.trim();
+            if (text) {
+                console.log('[Chat] Sending:', text);
+                socket.emit('send_message', { user: userName, text: text });
+                chatInput.value = '';
+            }
+        };
+
+        chatInput.onkeyup = (e) => { if (e.key === 'Enter') sendBtn.click(); };
+
+        // Handle name change from Android if needed
+        window.setNickname = (name) => {
+            userName = name;
+            currentNickDisplay.innerText = name;
+            localStorage.setItem('machi-nickname', name);
+        };
+    </script>
+</body>
+
+</html>

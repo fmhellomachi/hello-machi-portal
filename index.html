@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hello Machi FM | Live Studio Portal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="test-preview/style.css">
+    <!-- socket.io loaded conditionally: only on real server, never crashes the page -->
+    <script>
+        // Graceful socket.io stub — if server is not running, chat silently disabled
+        let socket = { on: () => { }, emit: () => { }, connected: false };
+
+        function initSocket() {
+            try {
+                const s = document.createElement('script');
+                // Use relative path for script, but absolute for connection
+                const host = window.location.origin;
+                // Priority: Localhost -> Current Origin -> Production Fallback
+                const RENDER_BACKEND = 'https://hello-machi-backend.onrender.com';
+                const socketUrl = (host.includes('localhost') || host.includes('127.0.0.1'))
+                    ? 'http://localhost:3000'
+                    : RENDER_BACKEND;
+
+                s.src = socketUrl + '/socket.io/socket.io.js';
+                s.onerror = () => {
+                    console.error('[Chat] Failed to load socket.io script.');
+                    updateChatStatus(false);
+                };
+                s.onload = () => {
+                    console.log('[Chat] Connecting to:', socketUrl);
+                    socket = io(socketUrl, {
+                        transports: ['websocket', 'polling'],
+                        reconnectionAttempts: 10
+                    });
+                    socket.on('connect', () => {
+                        console.log('[Chat] Connected Successfully! ✓');
+                        updateChatStatus(true);
+                        if (typeof setupChat === 'function') setupChat();
+                    });
+                    socket.on('connect_error', (err) => {
+                        console.warn('[Chat] Connection Error:', err);
+                        updateChatStatus(false);
+                    });
+                    socket.on('disconnect', () => updateChatStatus(false));
+
+                    if (typeof setupChat === 'function') setupChat();
+                };
+                document.head.appendChild(s);
+            } catch (e) { console.warn('[Chat] Socket.io initialization failed:', e); }
+        }
+
+        function setupChat() {
+            if (!socket) return;
+            const chatBox = document.getElementById('chatMessages');
+
+            socket.on('chat_history', (history) => {
+                if (chatBox) {
+                    chatBox.innerHTML = '';
+                    history.forEach(appendPortalMessage);
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                }
+            });
+
+            socket.on('new_message', (msg) => {
+                if (chatBox) {
+                    appendPortalMessage(msg);
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                }
+            });
+
+            socket.on('chat_cleared', (data) => {
+                if (chatBox) {
+                    chatBox.innerHTML = `<div class="system-msg" style="text-align:center; color:#888; font-size:0.8rem; padding:20px;">🗑 Chat was cleared by ${data.adminUser}</div>`;
+                }
+            });
+        }
+
+        function appendPortalMessage(msg) {
+            const chatBox = document.getElementById('chatMessages');
+            if (!chatBox) return;
+            const div = document.createElement('div');
+            div.className = 'chat-msg';
+            div.style.marginBottom = '12px';
+            div.innerHTML = `
+                <span class="user" style="color: var(--accent-gold); font-weight: bold; font-size: 0.8rem; display: block;">${msg.user}</span>
+                <span class="text" style="color: #eee; font-size: 0.9rem;">${msg.text}</span>
+                <span class="time" style="color: #555; font-size: 0.65rem; display: block; text-align: right; margin-top: 4px;">${msg.time}</span>
+            `;
+            chatBox.appendChild(div);
+        }
+
+        function updateChatStatus(connected) {
+            const dot = document.getElementById('chatStatusDot');
+            const text = document.getElementById('chatStatusText');
+            if (dot && text) {
+                dot.style.background = connected ? '#4caf50' : '#f44336';
+                text.innerText = connected ? 'STUDIO CHAT LIVE ✓' : 'CHAT DISCONNECTED ✗';
+            }
+        }
+        initSocket();
+    </script>
+
+    <style>
+        :root {
+            --accent-gold: #ffcf71;
+            --gold-gradient: linear-gradient(135deg, #ffcf71 0%, #d4af37 50%, #b8860b 100%);
+            --dark-bg: #050505;
+            --glass-white: rgba(255, 255, 255, 0.05);
+            --font-main: 'Inter', sans-serif;
+            --font-head: 'Outfit', sans-serif;
+        }
+
+        body {
+            overflow-x: hidden;
+            background-color: var(--dark-bg);
+            background: radial-gradient(circle at top right, #1a1a1a, #050505);
+            color: #fff;
+            font-family: var(--font-main);
+            margin: 0;
+        }
+
+        .portal-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            gap: 24px;
+            min-height: 100vh;
+            transition: padding-bottom 0.4s ease;
+        }
+
+        body.player-visible .portal-container {
+            padding-bottom: 100px;
+        }
+
+        @media (max-width: 1100px) {
+            .portal-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* --- THE STUDIO (Main Section) --- */
+        .live-studio {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .hero-banner {
+            background: linear-gradient(135deg, rgba(255, 215, 0, 0.1), rgba(255, 0, 128, 0.1));
+            border-radius: 24px;
+            padding: 40px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .studio-visualizer {
+            width: 100%;
+            height: 450px;
+            background: #000;
+            border-radius: 20px;
+            position: relative;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        }
+
+        /* --- CHAT HUB --- */
+        .chat-hub {
+            background: rgba(20, 20, 20, 0.8);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 40px);
+            position: sticky;
+            top: 20px;
+            transition: height 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        body.player-visible .chat-hub {
+            height: calc(100vh - 130px);
+        }
+
+        .chat-header {
+            padding: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .chat-input-area {
+            padding: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            gap: 10px;
+        }
+
+        .message {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 12px 16px;
+            border-radius: 16px;
+            max-width: 85%;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message .user {
+            font-weight: bold;
+            color: var(--accent-gold);
+            font-size: 0.8rem;
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        .message .time {
+            float: right;
+            font-size: 0.7rem;
+            color: #666;
+            margin-left: 10px;
+            margin-top: 4px;
+        }
+
+        /* --- PREMIUM ENHANCEMENTS --- */
+
+        @keyframes subtle-pulse {
+            0% {
+                transform: scale(1);
+                filter: brightness(1) drop-shadow(0 0 15px rgba(255, 215, 0, 0.1));
+            }
+
+            50% {
+                transform: scale(1.02);
+                filter: brightness(1.1) drop-shadow(0 0 25px rgba(255, 215, 0, 0.2));
+            }
+
+            100% {
+                transform: scale(1);
+                filter: brightness(1) drop-shadow(0 0 15px rgba(255, 215, 0, 0.1));
+            }
+        }
+
+        .pulse-logo {
+            animation: subtle-pulse 4s infinite ease-in-out;
+        }
+
+        .glass-card {
+            background: var(--glass-white);
+            backdrop-filter: blur(25px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 20px;
+            transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+            box-shadow: inset 0 0 15px rgba(255, 255, 255, 0.02);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .glass-card:hover {
+            transform: translateY(-8px);
+            border-color: rgba(255, 207, 113, 0.3);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), inset 0 0 20px rgba(255, 255, 255, 0.03);
+        }
+
+        .glass-btn {
+            background: var(--glass-white);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .glass-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: scale(1.05);
+            border-color: var(--accent-gold);
+        }
+
+        h1,
+        h2,
+        h3,
+        h4 {
+            font-family: var(--font-head);
+            letter-spacing: -0.02em;
+            margin-top: 0;
+        }
+
+        p {
+            line-height: 1.6;
+            color: #aaa;
+        }
+
+        /* Launch Overlay */
+        .launch-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.8s cubic-bezier(0.19, 1, 0.22, 1);
+        }
+
+        .launch-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(1.1);
+        }
+
+        /* Floating Player Bar */
+        .floating-player {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: rgba(10, 10, 10, 0.95);
+            backdrop-filter: blur(20px);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            z-index: 9000;
+            transform: translateY(100%);
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .floating-player.visible {
+            transform: translateY(0);
+        }
+
+        .mini-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .mini-logo {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+
+<body style="overflow-x: hidden;">
+
+    <!-- Launch Overlay -->
+    <div class="launch-overlay" id="launchOverlay">
+        <img src="./logo.jpg"
+            style="width: 150px; border-radius: 50%; box-shadow: 0 0 50px rgba(255,215,0,0.3); margin-bottom: 30px;">
+        <h1 style="font-family: 'Outfit'; color: var(--accent-gold); margin-bottom: 10px;">HELLO MACHI FM</h1>
+        <p style="color: #888; margin-bottom: 40px;">Experience Premium Tamil Radio</p>
+        <button id="enterStudio" class="glass-btn"
+            style="background: var(--gold-gradient); color: #000; font-weight: 800; border: none; padding: 15px 40px; border-radius: 40px; font-size: 1.1rem; cursor: pointer;">ENTER
+            STUDIO & LISTEN LIVE</button>
+    </div>
+
+    <!-- Floating Player Bar -->
+    <div class="floating-player" id="floatingPlayer">
+        <div class="mini-info">
+            <img src="./logo.jpg" class="mini-logo" id="miniLogo"
+                onerror="this.src='./logo.jpg'">
+            <div>
+                <div id="miniTitle"
+                    style="font-size: 0.9rem; font-weight: 700; color: var(--accent-gold); font-family: var(--font-head);">
+                    HELLO MACHI</div>
+                <div id="miniRj"
+                    style="font-size: 0.7rem; color: #888; text-transform: uppercase; letter-spacing: 1px;">LIVE NOW
+                </div>
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 20px;">
+            <div id="miniPlayBtn" style="cursor: pointer; font-size: 1.5rem; color: #fff;">▶</div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span>🔊</span>
+                <input type="range" id="miniVolume" min="0" max="1" step="0.01" value="0.5"
+                    style="width: 80px; accent-color: var(--accent-gold);">
+            </div>
+        </div>
+    </div>
+
+    <nav class="glass-nav"
+        style="position: sticky; top: 0; z-index: 1000; border-bottom: 1px solid rgba(255,255,255,0.08); background: rgba(5,5,5,0.9); backdrop-filter: blur(25px);">
+        <div
+            style="max-width: 1400px; margin: 0 auto; padding: 18px 20px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <img src="./logo.jpg" style="height: 44px; border-radius: 50%;" id="portalLogo"
+                    onerror="this.src='./logo.jpg'">
+                <h2
+                    style="font-family: var(--font-head); margin: 0; background: var(--gold-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-size: 1.5rem;">
+                    HELLO MACHI FM</h2>
+            </div>
+            <div style="display: flex; gap: 20px; align-items: center;">
+                <a href="#" style="color: #fff; text-decoration: none; font-weight: 600;">HOME</a>
+                <a href="#schedule" style="color: #aaa; text-decoration: none;">SCHEDULE</a>
+                <button id="settingsBtn" class="settings-btn"
+                    style="position: static; font-size: 1.2rem; background: none; border: none; cursor: pointer; padding: 5px;">⚙️</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="portal-container">
+        <!-- Main Studio Section -->
+        <div class="live-studio">
+
+            <div class="hero-banner">
+                <div>
+                    <span
+                        style="background: var(--accent-gold); color: #000; padding: 4px 12px; border-radius: 20px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase;">Streaming
+                        Live</span>
+                    <h1 id="onAirTitle"
+                        style="margin: 10px 0; font-family: var(--font-head); font-size: 3rem; letter-spacing: -0.03em;">
+                        LOADING STATION...</h1>
+                    <p id="onAirRj" style="color: #888; font-size: 1rem; margin: 0; font-weight: 500;">WITH RJ ...</p>
+                </div>
+                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 15px;">
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <div id="playBtnPortal" class="play-btn"
+                            style="position: static; width: 70px; height: 70px; font-size: 1.8rem;">▶</div>
+                        <div class="volume-control"
+                            style="display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.05); padding: 10px 20px; border-radius: 40px; border: 1px solid rgba(255,255,255,0.1);">
+                            <span style="font-size: 1.2rem;">🔊</span>
+                            <input type="range" id="portalVolume" min="0" max="1" step="0.01" value="0.5"
+                                style="width: 100px; accent-color: var(--accent-gold); cursor: pointer;">
+                        </div>
+                    </div>
+                    <button id="requestSongBtn" class="glass-btn"
+                        style="background: var(--gold-gradient); color: #000; font-weight: 800; border: none; padding: 12px 25px; border-radius: 30px; font-size: 0.9rem; letter-spacing: 1px; width: 100%;">🎵
+                        REQUEST A SONG</button>
+                </div>
+            </div>
+
+            <div class="studio-visualizer" id="visualizerContainer">
+                <!-- Particles & Logo will go here -->
+                <canvas id="visualizerCanvas" style="width: 100%; height: 100%;"></canvas>
+                <div id="logoContainer"
+                    style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">
+                    <img src="./logo.jpg" id="bgLogo" class="bg-logo"
+                        style="width: 240px; aspect-ratio: 1/1; border-radius: 50%; object-fit: cover; opacity: 0; transition: opacity 1s ease; filter: none;"
+                        onerror="this.src='./logo.jpg'">
+                    <img src="./logo.jpg" id="mainLogo" class="pulse-logo"
+                        style="width: 200px; border-radius: 50%; transition: transform 0.05s ease-out;"
+                        onerror="this.src='./logo.jpg'">
+                </div>
+            </div>
+
+            <div id="schedule" class="glass-card" style="padding: 30px;">
+                <h3 style="font-family: 'Outfit'; margin-top: 0;">📅 Today's Lineup</h3>
+                <div id="portalScheduleList"
+                    style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px;">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <div id="about" class="glass-card" style="padding: 40px; margin-top: 24px; text-align: center;">
+                <h2
+                    style="font-family: 'Outfit'; margin-top: 0; background: var(--gold-gradient); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; display: inline-block;">
+                    YOUR PREMIUM TAMIL STATION</h2>
+                <p style="color: #aaa; line-height: 1.8; max-width: 800px; margin: 20px auto;">
+                    Hello Machi FM is your digital companion for the best Tamil hits, retro classics, and live RJ shows.
+                    We bring the spirit of Chennai and the world together through music, fun, and community.
+                    Join the conversation in our live chat or reach out on WhatsApp to request your favorite tunes!
+                </p>
+                <div style="display: flex; gap: 20px; justify-content: center; margin-top: 30px;">
+                    <a href="https://www.facebook.com/hellomachifm" target="_blank" class="glass-btn" id="fbPortalLink"
+                        style="padding: 12px 24px; text-decoration: none; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; background: rgba(255,255,255,0.05);">FACEBOOK</a>
+                    <a href="https://www.instagram.com/hellomachifm" target="_blank" class="glass-btn" id="igPortalLink"
+                        style="padding: 12px 24px; text-decoration: none; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; background: rgba(255,255,255,0.05);">INSTAGRAM</a>
+                    <a href="https://www.youtube.com/@HelloMachiFM" target="_blank" class="glass-btn" id="ytPortalLink"
+                        style="padding: 12px 24px; text-decoration: none; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; background: rgba(255,255,255,0.05);">YOUTUBE</a>
+                </div>
+            </div>
+
+            <footer
+                style="margin-top: 80px; padding: 60px 0; border-top: 1px solid rgba(255,255,255,0.05); text-align: center; color: #444; font-size: 0.85rem; background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.01));">
+                <p style="margin-bottom: 15px; color: #666;">&copy; 2026 HELLO MACHI FM | <a href="#"
+                        style="color: #888; text-decoration: none;">Privacy Policy</a>
+                    | <a href="#" style="color: #888; text-decoration: none;">Terms of Service</a></p>
+                <span
+                    style="display: block; letter-spacing: 4px; color: #333; font-weight: 800; font-family: var(--font-head);">PROUDLY
+                    TAMIL &bull; PROUDLY GLOBAL</span>
+            </footer>
+
+        </div>
+
+        <!-- Chat Hub Section -->
+        <div class="chat-hub">
+            <div class="chat-header">
+                <div>
+                    <h3 style="margin: 0; font-family: 'Outfit';">Community Chat</h3>
+                    <span style="color: #22c55e; font-size: 0.7rem; font-weight: bold;">● LIVE</span>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="nicknameInput" placeholder="Name"
+                        style="width: 80px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 4px 8px; color: #fff; font-size: 0.8rem;">
+                </div>
+            </div>
+
+            <div class="chat-messages" id="chatMessages">
+                <!-- Messages populate here -->
+            </div>
+
+            <div class="chat-input-area">
+                <input type="text" id="chatInput" placeholder="Type a message..."
+                    style="flex: 1; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 12px; color: #fff;">
+                <button id="sendMessageBtn"
+                    style="background: var(--accent-gold); border: none; border-radius: 12px; padding: 0 20px; color: #000; font-weight: bold; cursor: pointer;">SEND</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Modal -->
+    <div id="adminModal" class="admin-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Admin Config</h2>
+                <button id="closeModal" class="close-modal">&times;</button>
+            </div>
+            <div class="config-form" id="configForm">
+                <div id="admin-login-view">
+                    <div class="form-group">
+                        <label>Admin ID</label>
+                        <input type="text" id="admin-id" placeholder="Enter ID"
+                            onkeyup="if(event.key==='Enter') checkAdminLogin()">
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input type="password" id="admin-pass" placeholder="Enter Password"
+                            onkeyup="if(event.key==='Enter') checkAdminLogin()">
+                    </div>
+                    <button type="button" class="save-config-btn" onclick="checkAdminLogin()">LOGIN</button>
+                </div>
+                <div id="admin-settings-view" style="display: none;">
+                    <div class="dashboard-section">
+                        <h4 class="section-title">📡 Core Station Setup</h4>
+                        <div class="form-group">
+                            <label>Live Stream URL</label>
+                            <input type="text" id="cfg-stream" placeholder="HTTPS Stream URL">
+                        </div>
+                        <div class="form-group">
+                            <label>Station Logo (URL)</label>
+                            <input type="text" id="cfg-logo" placeholder="Logo image URL">
+                        </div>
+                        <div class="form-group">
+                            <label>Station Name</label>
+                            <input type="text" id="cfg-title" placeholder="Station Title">
+                        </div>
+                        <div class="form-group">
+                            <label>Welcome Message</label>
+                            <input type="text" id="cfg-greeting" placeholder="e.g. WELCOME TO">
+                        </div>
+                    </div>
+                    <div class="dashboard-section">
+                        <h4 class="section-title">📱 Contact & Social</h4>
+                        <div class="form-group">
+                            <label>WhatsApp Number</label>
+                            <input type="text" id="cfg-wa-num" placeholder="+91 ...">
+                        </div>
+                        <div class="form-group">
+                            <label>Pre-filled WhatsApp Message</label>
+                            <input type="text" id="cfg-wa-msg">
+                        </div>
+                        <div class="form-group">
+                            <label>Facebook URL</label>
+                            <input type="text" id="cfg-fb-url" placeholder="https://facebook.com/...">
+                        </div>
+                        <div class="form-group">
+                            <label>YouTube URL</label>
+                            <input type="text" id="cfg-yt-url" placeholder="https://youtube.com/...">
+                        </div>
+                        <div class="form-group">
+                            <label>Instagram URL</label>
+                            <input type="text" id="cfg-ig-url" placeholder="https://instagram.com/...">
+                        </div>
+                        <div class="form-group">
+                            <label>Custom Studio Link</label>
+                            <input type="text" id="cfg-custom-url" placeholder="https://...">
+                        </div>
+                    </div>
+                    <div class="dashboard-section">
+                        <h4 class="section-title">⏰ Program Schedule</h4>
+                        <div id="programEditList"></div>
+                        <button type="button" class="add-btn" onclick="addProgramRow()"
+                            style="width: 100%; margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.3); border: 1px dashed #555; color: #fff; border-radius: 8px;">+
+                            ADD SHOW</button>
+                    </div>
+                    <button type="button" class="save-config-btn" onclick="applyRemoteUpdate()"
+                        style="margin-top: 20px;">SAVE &amp; SYNC</button>
+
+                    <!-- Admin Chat Controls -->
+                    <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.1);">
+                        <div
+                            style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                            <p
+                                style="margin: 0; color:#888; font-size:0.8rem; text-transform:uppercase; letter-spacing:1px;">
+                                💬 Chat Management</p>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <div id="chatStatusDot"
+                                    style="width: 8px; height: 8px; border-radius: 50%; background: #f44336;"></div>
+                                <span id="chatStatusText"
+                                    style="font-size: 0.65rem; font-weight: bold; color: #777;">DISCONNECTED</span>
+                            </div>
+                        </div>
+                        <button type="button" onclick="adminClearChat()"
+                            style="width:100%; padding:12px; background:rgba(255,60,60,0.12); border:1px solid rgba(255,60,60,0.35); border-radius:10px; color:#ff6b6b; font-weight:bold; font-size:0.9rem; cursor:pointer;">
+                            🗑 Clear All Chat Messages
+                        </button>
+                        <p style="margin:6px 0 0; color:#555; font-size:0.72rem; text-align:center;">Permanently deletes
+                            all messages for all users.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Audio Player -->
+    <audio id="radioAudio"></audio>
+
+    <script>
+        // socket is already initialised above via graceful loader
+        const chatMessages = document.getElementById('chatMessages');
+
+        const chatInput = document.getElementById('chatInput');
+        const sendBtn = document.getElementById('sendMessageBtn');
+        const audio = document.getElementById('radioAudio');
+        const playBtn = document.getElementById('playBtnPortal');
+        const miniPlayBtn = document.getElementById('miniPlayBtn');
+        const nickInput = document.getElementById('nicknameInput');
+        const volSlider = document.getElementById('portalVolume');
+        const miniVolSlider = document.getElementById('miniVolume');
+        const requestBtn = document.getElementById('requestSongBtn');
+        const launchOverlay = document.getElementById('launchOverlay');
+        const enterBtn = document.getElementById('enterStudio');
+        const floatingPlayer = document.getElementById('floatingPlayer');
+
+        let userName = localStorage.getItem('machi-nickname') || 'Listener_' + Math.floor(Math.random() * 9000 + 1000);
+        nickInput.value = userName;
+
+        // Handle Launch & Autoplay
+        enterBtn.onclick = () => {
+            launchOverlay.classList.add('hidden');
+            setTimeout(() => {
+                launchOverlay.style.display = 'none';
+                document.getElementById('settingsBtn').classList.add('visible'); // Show gear ⚙️
+            }, 800);
+            if (!isPlaying) triggerPlay(); // Start playing immediately
+            updateMediaSession();
+        };
+
+        function getCurrentProgram() {
+            if (!config || !config.programs) return null;
+            const now = new Date();
+            const timeVal = now.getHours() * 100 + now.getMinutes();
+            let current = config.programs[0];
+            for (let p of config.programs) {
+                const parts = p.time.split(':');
+                const startVal = parseInt(parts[0]) * 100 + parseInt(parts[1]);
+                const endParts = (p.endTime || "23:59").split(':');
+                const endVal = parseInt(endParts[0]) * 100 + parseInt(endParts[1]);
+                if (timeVal >= startVal && timeVal < endVal) {
+                    current = p;
+                    break;
+                }
+            }
+            return current;
+        }
+
+        function updateMediaSession() {
+            if ('mediaSession' in navigator) {
+                const prog = getCurrentProgram();
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: prog ? prog.title : (config.welcome_title || 'Hello Machi FM'),
+                    artist: prog ? `Live with ${prog.rj}` : (config.welcome_greeting || 'Live Radio'),
+                    album: 'Live Studio Portal',
+                    artwork: [
+                        { src: './Logo.jpg', sizes: '512x512', type: 'image/jpeg' }
+                    ]
+                });
+
+                navigator.mediaSession.setActionHandler('play', triggerPlay);
+                navigator.mediaSession.setActionHandler('pause', triggerPlay);
+            }
+        }
+
+        // Sync Volume Sliders
+        audio.volume = 0.5;
+        volSlider.oninput = (e) => {
+            audio.volume = e.target.value;
+            miniVolSlider.value = e.target.value;
+        };
+        miniVolSlider.oninput = (e) => {
+            audio.volume = e.target.value;
+            volSlider.value = e.target.value;
+        };
+
+        // Handle Request
+        requestBtn.onclick = () => {
+            const num = (config && config.whatsapp_number) || "+91 9092363433";
+            const cleanNum = num.replace(/\D/g, '');
+            const msg = encodeURIComponent(`Hello Machi FM! I am ${userName} and I have a song request: `);
+            window.open(`https://api.whatsapp.com/send?phone=${cleanNum}&text=${msg}`, '_blank');
+        };
+
+        // Scroll Tracking for Floating Player
+        window.onscroll = () => {
+            const studioBottom = document.querySelector('.hero-banner').getBoundingClientRect().bottom;
+            if (studioBottom < 0) {
+                floatingPlayer.classList.add('visible');
+                document.body.classList.add('player-visible');
+            } else {
+                floatingPlayer.classList.remove('visible');
+                document.body.classList.remove('player-visible');
+            }
+        };
+
+        // --- COMMON PLAY TRIGGER ---
+        function triggerPlay() {
+            if (!isPlaying) {
+                try {
+                    audio.crossOrigin = "anonymous";
+                    initVisualizer();
+                    if (audioContext && audioContext.state === 'suspended') audioContext.resume();
+
+                    const targetStream = (config && config.stream_url) || defaultConfig.stream_url;
+                    audio.src = targetStream;
+                    audio.load();
+
+                    audio.play().then(() => {
+                        console.log("[Audio] System Active ✓");
+                        isPlaying = true;
+                        playBtn.innerText = '⏸';
+                        miniPlayBtn.innerText = '⏸';
+                        smoothBass = 0; // Reset physics on new play
+                        draw();
+                    }).catch(err => {
+                        console.error("[Audio] Play Error:", err);
+                        // Fallback retry
+                        audio.removeAttribute('crossOrigin');
+                        audio.load();
+                        audio.play();
+                        isPlaying = true;
+                        playBtn.innerText = '⏸';
+                        miniPlayBtn.innerText = '⏸';
+                    });
+                } catch (e) { console.error("[Audio] Init Error:", e); }
+            } else {
+                audio.pause();
+                isPlaying = false;
+                playBtn.innerText = '▶';
+                miniPlayBtn.innerText = '▶';
+                if (animationId) cancelAnimationFrame(animationId);
+            }
+        }
+
+        playBtn.onclick = triggerPlay;
+        miniPlayBtn.onclick = triggerPlay;
+        nickInput.value = userName;
+
+        nickInput.onchange = () => {
+            if (nickInput.value.trim()) {
+                userName = nickInput.value.trim();
+                localStorage.setItem('machi-nickname', userName);
+            }
+        };
+
+        // --- CHAT LOGIC ---
+        function setupChat() {
+            if (!socket || !socket.on) return;
+            console.log('[Chat] Setting up listeners...');
+
+            socket.on('chat_history', (history) => {
+                console.log('[Chat] History received:', history.length);
+                chatMessages.innerHTML = '';
+                history.forEach(appendMessage);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            });
+
+            socket.on('new_message', (msg) => {
+                console.log('[Chat] Incoming:', msg.text);
+                appendMessage(msg);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            });
+        }
+
+        function appendMessage(msg) {
+            const div = document.createElement('div');
+            div.className = 'message';
+            div.innerHTML = `
+                <span class="user">${msg.user}</span>
+                <span class="text">${msg.text}</span>
+                <span class="time">${msg.time}</span>
+            `;
+            chatMessages.appendChild(div);
+        }
+
+        sendBtn.onclick = () => {
+            const text = chatInput.value.trim();
+            if (text) {
+                console.log('[Chat] Sending:', text);
+                socket.emit('send_message', { user: userName, text: text });
+                chatInput.value = '';
+            }
+        };
+
+        chatInput.onkeyup = (e) => { if (e.key === 'Enter') sendBtn.click(); };
+
+        // Initial setup in case socket connected before this script ran
+        if (socket.connected) setupChat();
+
+        // --- STATION ENGINE ---
+        let config = {};
+        const RENDER_BACKEND = 'https://hello-machi-backend.onrender.com';
+        const defaultConfig = {
+            "stream_url": "https://sonic-ca.instainternet.com/8022/stream",
+            "logo_url": "./logo.jpg",
+            "programs": [{ "time": "00:00", "endTime": "23:59", "title": "Hello Machi Live", "rj": "Machi Team" }]
+        };
+
+        const API_URL = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+            ? 'http://localhost:3000/config'
+            : RENDER_BACKEND + '/config';
+
+        async function loadConfig() {
+            try {
+                const res = await fetch(API_URL);
+                if (res.ok) {
+                    const remoteConfig = await res.json();
+                    config = { ...defaultConfig, ...remoteConfig }; // Merge with defaults
+                } else {
+                    const local = JSON.parse(localStorage.getItem('hello-machi-remote-config'));
+                    config = local ? { ...defaultConfig, ...local } : defaultConfig;
+                }
+            } catch (e) {
+                const local = JSON.parse(localStorage.getItem('hello-machi-remote-config'));
+                config = local ? { ...defaultConfig, ...local } : defaultConfig;
+            }
+            applyConfig();
+        }
+
+        function applyConfig() {
+            document.getElementById('portalLogo').src = config.logo_url;
+            document.getElementById('mainLogo').src = config.logo_url;
+            document.getElementById('miniLogo').src = config.logo_url;
+
+            if (config.facebook_url) document.getElementById('fbPortalLink').href = config.facebook_url;
+            if (config.youtube_url) document.getElementById('ytPortalLink').href = config.youtube_url;
+            if (config.instagram_url) document.getElementById('igPortalLink').href = config.instagram_url;
+            if (config.custom_link) {
+                // Optionally add a link for the custom URL if desired, 
+                // for now we ensure it's in the config object for the admin panel.
+            }
+
+            renderSchedule();
+            updateNowPlaying();
+            updateMediaSession();
+        }
+
+        function renderSchedule() {
+            const list = document.getElementById('portalScheduleList');
+            list.innerHTML = config.programs.map(p => `
+                <div class="glass-card" style="padding: 15px; border-radius: 15px; background: rgba(255,255,255,0.02);">
+                    <div style="font-weight: bold; color: var(--accent-gold); margin-bottom: 5px;">${p.time} - ${p.endTime}</div>
+                    <div style="font-weight: 600;">${p.title}</div>
+                    <div style="font-size: 0.8rem; color: #888;">with ${p.rj}</div>
+                </div>
+            `).join('');
+        }
+
+        function updateNowPlaying() {
+            const now = new Date();
+            const timeVal = now.getHours() * 100 + now.getMinutes();
+            let current = config.programs[0];
+
+            for (let p of config.programs) {
+                const [h, m] = p.time.split(':').map(Number);
+                const [eh, em] = (p.endTime || "23:59").split(':').map(Number);
+                if (timeVal >= (h * 100 + m) && timeVal < (eh * 100 + em)) {
+                    current = p;
+                    break;
+                }
+            }
+
+            document.getElementById('onAirTitle').innerText = current.title;
+            document.getElementById('onAirRj').innerText = `WITH ${current.rj}`;
+            document.getElementById('miniTitle').innerText = current.title;
+            document.getElementById('miniRj').innerText = `WITH ${current.rj}`;
+            updateMediaSession();
+        }
+
+        // --- AUDIO & VISUALIZER ---
+        let audioContext, analyzer, dataArray, animationId, isPlaying = false;
+        let smoothBass = 0; // Persistent physics state
+        let vizIntensity = 0; // Playback fade state
+        const canvas = document.getElementById('visualizerCanvas');
+        const ctx = canvas.getContext('2d');
+        const mainLogo = document.getElementById('mainLogo');
+
+        function initVisualizer() {
+            if (audioContext) return;
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const source = audioContext.createMediaElementSource(audio);
+            analyzer = audioContext.createAnalyser();
+            analyzer.fftSize = 256;
+            source.connect(analyzer);
+            analyzer.connect(audioContext.destination);
+            dataArray = new Uint8Array(analyzer.frequencyBinCount);
+
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+
+            audio.addEventListener('error', (e) => {
+                console.error("Audio Error:", audio.error);
+                alert("Station offline or stream error. Please try again later.");
+            });
+        }
+
+        function draw() {
+            animationId = requestAnimationFrame(draw);
+            analyzer.getByteFrequencyData(dataArray);
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Golden Sync Integration (Standardized Multipliers)
+            let bass = 0;
+            for (let i = 0; i < 12; i++) bass += dataArray[i];
+            bass = bass / 12;
+
+            const rawNorm = (bass / 255);
+            smoothBass = Math.max(rawNorm, smoothBass * 0.88);
+            const punchyEnergy = Math.pow(smoothBass, 1.3);
+
+            const scale = 1 + punchyEnergy * 0.65; // Golden Multiplier
+            mainLogo.style.transform = `scale(${scale})`;
+
+            // Background Logo: CRISP DANCE (No Blur)
+            const bgLogo = document.getElementById('bgLogo');
+            if (bgLogo) {
+                vizIntensity = Math.max(0, Math.min(1, isPlaying ? vizIntensity + 0.05 : vizIntensity - 0.05));
+                bgLogo.style.opacity = 0.85 * vizIntensity;
+                bgLogo.style.transform = `translate(-50%, -50%) scale(${1 + punchyEnergy * 0.25})`;
+                // Blur explicitly removed for crisp portal feel
+                bgLogo.style.filter = 'none';
+            }
+
+            // Draw circular visualizer
+            const barCount = analyzer.frequencyBinCount;
+            const radius = 120 * scale;
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+
+            for (let i = 0; i < barCount; i++) {
+                const barHeight = (dataArray[i] / 255) * 80;
+                const angle = (i / barCount) * Math.PI * 2;
+                const x1 = centerX + Math.cos(angle) * radius;
+                const y1 = centerY + Math.sin(angle) * radius;
+                const x2 = centerX + Math.cos(angle) * (radius + barHeight);
+                const y2 = centerY + Math.sin(angle) * (radius + barHeight);
+
+                ctx.strokeStyle = `hsla(${200 + i}, 80%, 60%, 0.8)`;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+            }
+        }
+
+        // Removed duplicate playBtn.onclick — triggerPlay() above is the canonical handler
+
+        window.onload = loadConfig;
+
+        // --- ADMIN UI LOGIC ---
+        const settingsBtn = document.getElementById('settingsBtn');
+        const adminModal = document.getElementById('adminModal');
+        const closeModal = document.getElementById('closeModal');
+        const programEditList = document.getElementById('programEditList');
+
+        settingsBtn.onclick = () => {
+            document.getElementById('admin-login-view').style.display = 'block';
+            document.getElementById('admin-settings-view').style.display = 'none';
+            adminModal.style.display = 'flex';
+        };
+
+        closeModal.onclick = () => adminModal.style.display = 'none';
+
+        function checkAdminLogin() {
+            const id = document.getElementById('admin-id').value;
+            const pass = document.getElementById('admin-pass').value;
+            if (id === 'admin' && pass === 'hellomachi@2025') {
+                document.getElementById('cfg-stream').value = config.stream_url;
+                document.getElementById('cfg-logo').value = config.logo_url;
+                document.getElementById('cfg-title').value = config.welcome_title || '';
+                document.getElementById('cfg-greeting').value = config.welcome_greeting || '';
+                document.getElementById('cfg-wa-num').value = config.whatsapp_number;
+                document.getElementById('cfg-wa-msg').value = config.whatsapp_message;
+                document.getElementById('cfg-fb-url').value = config.facebook_url || '';
+                document.getElementById('cfg-yt-url').value = config.youtube_url || '';
+                document.getElementById('cfg-ig-url').value = config.instagram_url || '';
+                document.getElementById('cfg-custom-url').value = config.custom_link || '';
+
+                renderProgramEditList();
+                document.getElementById('admin-login-view').style.display = 'none';
+                document.getElementById('admin-settings-view').style.display = 'block';
+            } else {
+                alert("Invalid Credentials!");
+            }
+        }
+
+        function renderProgramEditList() {
+            programEditList.innerHTML = '';
+            config.programs.forEach((p, index) => {
+                const div = document.createElement('div');
+                div.className = 'program-edit-item';
+                div.innerHTML = `
+                    <input type="text" value="${p.time}" style="width:60px;">
+                    <input type="text" value="${p.endTime || ''}" style="width:60px;">
+                    <input type="text" value="${p.title}" style="flex:1;">
+                    <input type="text" value="${p.rj}" style="width:80px;">
+                    <button type="button" class="del-btn" onclick="removeProgramRow(${index})">&times;</button>
+                `;
+                programEditList.appendChild(div);
+            });
+        }
+
+        function addProgramRow() {
+            const div = document.createElement('div');
+            div.className = 'program-edit-item';
+            div.innerHTML = `
+                <input type="text" placeholder="00:00" style="width:60px;">
+                <input type="text" placeholder="00:00" style="width:60px;">
+                <input type="text" placeholder="Title" style="flex:1;">
+                <input type="text" placeholder="RJ Name" style="width:80px;">
+                <button type="button" class="del-btn" onclick="this.parentElement.remove()">&times;</button>
+            `;
+            programEditList.appendChild(div);
+        }
+
+        function removeProgramRow(index) {
+            config.programs.splice(index, 1);
+            renderProgramEditList();
+        }
+
+        function applyRemoteUpdate() {
+            const newConfig = {
+                ...config,
+                "stream_url": document.getElementById('cfg-stream').value,
+                "whatsapp_number": document.getElementById('cfg-wa-num').value,
+                "whatsapp_message": document.getElementById('cfg-wa-msg').value,
+                "logo_url": document.getElementById('cfg-logo').value,
+                "welcome_title": document.getElementById('cfg-title').value,
+                "welcome_greeting": document.getElementById('cfg-greeting').value,
+                "facebook_url": document.getElementById('cfg-fb-url').value,
+                "youtube_url": document.getElementById('cfg-yt-url').value,
+                "instagram_url": document.getElementById('cfg-ig-url').value,
+                "custom_link": document.getElementById('cfg-custom-url').value,
+                "programs": []
+            };
+
+            const rows = programEditList.querySelectorAll('.program-edit-item');
+            rows.forEach(row => {
+                const b = row.querySelectorAll('input');
+                if (b.length >= 4) {
+                    newConfig.programs.push({
+                        time: b[0].value,
+                        endTime: b[1].value,
+                        title: b[2].value,
+                        rj: b[3].value
+                    });
+                }
+            });
+
+            fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newConfig)
+            }).then(res => {
+                if (res.ok) {
+                    config = newConfig;
+                    applyConfig();
+                    adminModal.style.display = 'none';
+                    alert("STATION SYNCED! ✓\nAll listeners and the Android App are now updated.");
+                }
+            });
+        }
+
+        function adminClearChat() {
+            if (!confirm('⚠️ Clear ALL chat messages?\n\nThis cannot be undone and will clear chat for all users.')) return;
+            if (socket && socket.connected) {
+                socket.emit('clear_chat', { adminUser: 'Admin Portal' });
+                alert('✅ Chat cleared successfully!');
+            } else {
+                alert('❌ Not connected to chat server. Make sure the server is running.');
+            }
+        }
+    </script>
+</body>
+
+</html>

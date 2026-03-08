@@ -625,8 +625,26 @@
                     <div class="dashboard-section">
                         <h4 class="section-title">📡 Core Station Setup</h4>
                         <div class="form-group">
-                            <label>Live Stream URL</label>
+                            <label>Live Stream URL (Primary)</label>
                             <input type="text" id="cfg-stream" placeholder="HTTPS Stream URL">
+                        </div>
+                        <div class="form-group">
+                            <label>Fallback Stream URL (Secondary)</label>
+                            <input type="text" id="cfg-stream-fallback" placeholder="Backup Stream URL">
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div class="form-group">
+                                <label>Fallback Timeout (Min)</label>
+                                <input type="number" id="cfg-fallback-timeout" value="30" min="1">
+                            </div>
+                            <div class="form-group">
+                                <label>Stream Mode</label>
+                                <select id="cfg-stream-mode" style="width: 100%; padding: 12px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff;">
+                                    <option value="auto">Auto-Fallback</option>
+                                    <option value="primary">Primary Only</option>
+                                    <option value="fallback">Fallback Only</option>
+                                </select>
+                            </div>
                         </div>
                         <div class="form-group">
                             <label>Station Logo (URL)</label>
@@ -810,6 +828,48 @@
             }
         };
 
+        let fallbackActive = false;
+        let stallTimeout = null;
+
+        function getActiveStreamUrl() {
+            const mode = config.stream_mode || 'auto';
+            if (mode === 'primary') return config.stream_url || defaultConfig.stream_url;
+            if (mode === 'fallback') return config.fallback_stream_url || config.stream_url;
+            
+            // Auto mode
+            return fallbackActive ? (config.fallback_stream_url || config.stream_url) : (config.stream_url || defaultConfig.stream_url);
+        }
+
+        function startFallbackMonitor() {
+            if (stallTimeout) clearTimeout(stallTimeout);
+            fallbackActive = false; // Reset on every play start
+
+            audio.addEventListener('waiting', handleAudioStall);
+            audio.addEventListener('stalled', handleAudioStall);
+            audio.addEventListener('error', handleAudioStall);
+        }
+
+        function handleAudioStall() {
+            if (stallTimeout || fallbackActive) return;
+            const timeoutMin = config.fallback_timeout || 30;
+            const mode = config.stream_mode || 'auto';
+            
+            if (mode !== 'auto' || !config.fallback_stream_url) return;
+
+            console.log(`[Audio] Potential stall detected. Waiting ${timeoutMin} min for fallback...`);
+            stallTimeout = setTimeout(() => {
+                if (isPlaying && (audio.paused || audio.readyState < 3)) {
+                    console.warn(`[Audio] Switching to FALLBACK stream after ${timeoutMin} min stall.`);
+                    fallbackActive = true;
+                    const fallbackUrl = config.fallback_stream_url;
+                    audio.src = fallbackUrl;
+                    audio.load();
+                    audio.play().catch(e => console.error("[Audio] Fallback playback failed:", e));
+                }
+                stallTimeout = null;
+            }, timeoutMin * 60 * 1000);
+        }
+
         // --- COMMON PLAY TRIGGER ---
         function triggerPlay() {
             if (!isPlaying) {
@@ -818,7 +878,7 @@
                     initVisualizer();
                     if (audioContext && audioContext.state === 'suspended') audioContext.resume();
 
-                    const targetStream = (config && config.stream_url) || defaultConfig.stream_url;
+                    const targetStream = getActiveStreamUrl();
                     audio.src = targetStream;
                     audio.load();
 
@@ -827,8 +887,9 @@
                         isPlaying = true;
                         playBtn.innerText = '⏸';
                         miniPlayBtn.innerText = '⏸';
-                        smoothBass = 0; // Reset physics on new play
+                        smoothBass = 0;
                         draw();
+                        startFallbackMonitor();
                     }).catch(err => {
                         console.error("[Audio] Play Error:", err);
                         // Fallback retry
@@ -910,6 +971,9 @@
         let config = {};
         const defaultConfig = {
             "stream_url": "https://sonic-ca.instainternet.com/8022/stream",
+            "fallback_stream_url": "",
+            "fallback_timeout": 30,
+            "stream_mode": "auto",
             "logo_url": "./logo.jpg",
             "programs": [{ "time": "00:00", "endTime": "23:59", "title": "Hello Machi Live", "rj": "Machi Team" }]
         };
@@ -1099,6 +1163,9 @@
                 document.getElementById('cfg-yt-url').value = config.youtube_url || '';
                 document.getElementById('cfg-ig-url').value = config.instagram_url || '';
                 document.getElementById('cfg-custom-url').value = config.custom_link || '';
+                document.getElementById('cfg-stream-fallback').value = config.fallback_stream_url || '';
+                document.getElementById('cfg-fallback-timeout').value = config.fallback_timeout || 30;
+                document.getElementById('cfg-stream-mode').value = config.stream_mode || 'auto';
 
                 renderProgramEditList();
                 document.getElementById('admin-login-view').style.display = 'none';
@@ -1155,6 +1222,9 @@
                 "youtube_url": document.getElementById('cfg-yt-url').value,
                 "instagram_url": document.getElementById('cfg-ig-url').value,
                 "custom_link": document.getElementById('cfg-custom-url').value,
+                "fallback_stream_url": document.getElementById('cfg-stream-fallback').value,
+                "fallback_timeout": parseInt(document.getElementById('cfg-fallback-timeout').value) || 30,
+                "stream_mode": document.getElementById('cfg-stream-mode').value,
                 "programs": []
             };
 

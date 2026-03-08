@@ -16,43 +16,81 @@
         // Graceful socket.io stub — if server is not running, chat silently disabled
         let socket = { on: () => { }, emit: () => { }, connected: false };
 
+        // ============================================================
+        // MULTI-SERVER FALLBACK LIST
+        // Add / remove servers here. The portal tries them in order.
+        // First one that connects wins. Others are ignored.
+        // ============================================================
+        const IS_LOCAL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const SERVER_LIST = IS_LOCAL
+            ? ['http://localhost:3000']            // Only local in dev
+            : [
+                'https://hello-machi-backend.onrender.com',   // Primary (Render)
+                // 'https://hello-machi-backup.onrender.com', // ← Uncomment to add a backup
+                // 'https://your-railway-backend.up.railway.app', // ← Or Railway
+            ];
+
+        let activeServerUrl = null; // Set once a server is found working
+
         function initSocket() {
-            try {
-                const s = document.createElement('script');
-                // Use relative path for script, but absolute for connection
-                const host = window.location.origin;
-                // Priority: Localhost -> Current Origin -> Production Fallback
-                const RENDER_BACKEND = 'https://hello-machi-backend.onrender.com';
-                const socketUrl = (host.includes('localhost') || host.includes('127.0.0.1'))
-                    ? 'http://localhost:3000'
-                    : RENDER_BACKEND;
+            tryNextServer(0);
+        }
 
-                s.src = socketUrl + '/socket.io/socket.io.js';
-                s.onerror = () => {
-                    console.error('[Chat] Failed to load socket.io script.');
-                    updateChatStatus(false);
-                };
-                s.onload = () => {
-                    console.log('[Chat] Connecting to:', socketUrl);
-                    socket = io(socketUrl, {
-                        transports: ['websocket', 'polling'],
-                        reconnectionAttempts: 10
-                    });
-                    socket.on('connect', () => {
-                        console.log('[Chat] Connected Successfully! ✓');
-                        updateChatStatus(true);
-                        if (typeof setupChat === 'function') setupChat();
-                    });
-                    socket.on('connect_error', (err) => {
-                        console.warn('[Chat] Connection Error:', err);
-                        updateChatStatus(false);
-                    });
-                    socket.on('disconnect', () => updateChatStatus(false));
+        function tryNextServer(index) {
+            if (index >= SERVER_LIST.length) {
+                console.warn('[Chat] All servers failed. Chat disabled.');
+                updateChatStatus(false);
+                return;
+            }
+            const serverUrl = SERVER_LIST[index];
+            console.log(`[Chat] Trying server ${index + 1}/${SERVER_LIST.length}: ${serverUrl}`);
 
+            const s = document.createElement('script');
+            s.src = serverUrl + '/socket.io/socket.io.js';
+
+            s.onerror = () => {
+                console.warn(`[Chat] Server ${index + 1} unreachable, trying next...`);
+                document.head.removeChild(s);
+                tryNextServer(index + 1); // Move to next
+            };
+
+            s.onload = () => {
+                console.log(`[Chat] socket.io loaded from server ${index + 1}, connecting...`);
+                const newSocket = io(serverUrl, {
+                    transports: ['websocket', 'polling'],
+                    reconnectionAttempts: 5,
+                    timeout: 8000
+                });
+
+                const fallbackTimer = setTimeout(() => {
+                    if (!newSocket.connected) {
+                        console.warn(`[Chat] Server ${index + 1} timed out, trying next...`);
+                        newSocket.disconnect();
+                        tryNextServer(index + 1);
+                    }
+                }, 9000);
+
+                newSocket.on('connect', () => {
+                    clearTimeout(fallbackTimer);
+                    activeServerUrl = serverUrl;
+                    socket = newSocket;
+                    console.log(`[Chat] ✓ Connected to server ${index + 1}: ${serverUrl}`);
+                    updateChatStatus(true);
                     if (typeof setupChat === 'function') setupChat();
-                };
-                document.head.appendChild(s);
-            } catch (e) { console.warn('[Chat] Socket.io initialization failed:', e); }
+                });
+
+                newSocket.on('connect_error', () => {
+                    clearTimeout(fallbackTimer);
+                    console.warn(`[Chat] Server ${index + 1} connect_error, trying next...`);
+                    newSocket.disconnect();
+                    tryNextServer(index + 1);
+                });
+
+                newSocket.on('disconnect', () => updateChatStatus(false));
+            };
+
+            try { document.head.appendChild(s); }
+            catch (e) { tryNextServer(index + 1); }
         }
 
         function setupChat() {
@@ -79,6 +117,10 @@
                     chatBox.innerHTML = `<div class="system-msg" style="text-align:center; color:#888; font-size:0.8rem; padding:20px;">🗑 Chat was cleared by ${data.adminUser}</div>`;
                 }
             });
+
+            socket.on('user_count', (count) => {
+                updateOnlineCount(count);
+            });
         }
 
         function appendPortalMessage(msg) {
@@ -102,6 +144,13 @@
                 dot.style.background = connected ? '#4caf50' : '#f44336';
                 text.innerText = connected ? 'STUDIO CHAT LIVE ✓' : 'CHAT DISCONNECTED ✗';
             }
+        }
+
+        function updateOnlineCount(count) {
+            const countEl = document.getElementById('onlineCount');
+            const adminCountEl = document.getElementById('adminOnlineCount');
+            if (countEl) countEl.innerText = count + ' ONLINE';
+            if (adminCountEl) adminCountEl.innerText = count;
         }
         initSocket();
     </script>
@@ -527,7 +576,10 @@
             <div class="chat-header">
                 <div>
                     <h3 style="margin: 0; font-family: 'Outfit';">Community Chat</h3>
-                    <span style="color: #22c55e; font-size: 0.7rem; font-weight: bold;">● LIVE</span>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="color: #22c55e; font-size: 0.7rem; font-weight: bold;">● LIVE</span>
+                        <span id="onlineCount" style="color: #888; font-size: 0.7rem; font-weight: bold; background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px;">0 ONLINE</span>
+                    </div>
                 </div>
                 <div style="display: flex; gap: 8px;">
                     <input type="text" id="nicknameInput" placeholder="Name"
@@ -633,11 +685,17 @@
                             <p
                                 style="margin: 0; color:#888; font-size:0.8rem; text-transform:uppercase; letter-spacing:1px;">
                                 💬 Chat Management</p>
-                            <div style="display: flex; align-items: center; gap: 6px;">
-                                <div id="chatStatusDot"
-                                    style="width: 8px; height: 8px; border-radius: 50%; background: #f44336;"></div>
-                                <span id="chatStatusText"
-                                    style="font-size: 0.65rem; font-weight: bold; color: #777;">DISCONNECTED</span>
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <span style="font-size: 0.65rem; color: #888;">Online: </span>
+                                    <span id="adminOnlineCount" style="font-size: 0.7rem; font-weight: bold; color: var(--accent-gold);">0</span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <div id="chatStatusDot"
+                                        style="width: 8px; height: 8px; border-radius: 50%; background: #f44336;"></div>
+                                    <span id="chatStatusText"
+                                        style="font-size: 0.65rem; font-weight: bold; color: #777;">DISCONNECTED</span>
+                                </div>
                             </div>
                         </div>
                         <button type="button" onclick="adminClearChat()"
@@ -846,33 +904,38 @@
         // Initial setup in case socket connected before this script ran
         if (socket.connected) setupChat();
 
-        // --- STATION ENGINE ---
+        // ============================================================
+        // SERVER LIST FOR CONFIG API (same as socket list above)
+        // ============================================================
         let config = {};
-        const RENDER_BACKEND = 'https://hello-machi-backend.onrender.com';
         const defaultConfig = {
             "stream_url": "https://sonic-ca.instainternet.com/8022/stream",
             "logo_url": "./logo.jpg",
             "programs": [{ "time": "00:00", "endTime": "23:59", "title": "Hello Machi Live", "rj": "Machi Team" }]
         };
 
-        const API_URL = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-            ? 'http://localhost:3000/config'
-            : RENDER_BACKEND + '/config';
-
         async function loadConfig() {
-            try {
-                const res = await fetch(API_URL);
-                if (res.ok) {
-                    const remoteConfig = await res.json();
-                    config = { ...defaultConfig, ...remoteConfig }; // Merge with defaults
-                } else {
-                    const local = JSON.parse(localStorage.getItem('hello-machi-remote-config'));
-                    config = local ? { ...defaultConfig, ...local } : defaultConfig;
+            // Try each server in order until one responds with config
+            const configServers = IS_LOCAL
+                ? ['http://localhost:3000']
+                : SERVER_LIST;
+            for (const srv of configServers) {
+                try {
+                    const res = await fetch(srv + '/config', { signal: AbortSignal.timeout(5000) });
+                    if (res.ok) {
+                        const remoteConfig = await res.json();
+                        config = { ...defaultConfig, ...remoteConfig };
+                        activeServerUrl = activeServerUrl || srv; // Cache working server
+                        applyConfig();
+                        return; // Success — stop trying
+                    }
+                } catch (e) {
+                    console.warn(`[Config] Server ${srv} failed, trying next...`);
                 }
-            } catch (e) {
-                const local = JSON.parse(localStorage.getItem('hello-machi-remote-config'));
-                config = local ? { ...defaultConfig, ...local } : defaultConfig;
             }
+            // All servers failed — use localStorage or defaults
+            const local = JSON.parse(localStorage.getItem('hello-machi-remote-config'));
+            config = local ? { ...defaultConfig, ...local } : defaultConfig;
             applyConfig();
         }
 
@@ -1108,7 +1171,8 @@
                 }
             });
 
-            fetch(API_URL, {
+            const saveUrl = (activeServerUrl || SERVER_LIST[0]) + '/config';
+            fetch(saveUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(newConfig)

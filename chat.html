@@ -152,7 +152,10 @@
     <div class="chat-header">
         <div>
             <h3>Community Chat</h3>
-            <span class="live-indicator">● LIVE STUDIO</span>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="live-indicator">● LIVE STUDIO</span>
+                <span id="chatOnlineCount" style="color: #888; font-size: 0.7rem; font-weight: bold; background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px;">0 ONLINE</span>
+            </div>
         </div>
         <div style="font-size: 0.8rem; color: #777;">
             Name: <span id="currentNick" style="color: var(--accent-gold);">Machi User</span>
@@ -168,17 +171,14 @@
         <button id="sendMessageBtn">SEND</button>
     </div>
 
-    <script>
-        let socket;
-        let userName = localStorage.getItem('machi-nickname') || 'Machi User';
-        const chatInput = document.getElementById('chatInput');
-        const sendBtn = document.getElementById('sendMessageBtn');
-        const chatMessages = document.getElementById('chatMessages');
-        const currentNickDisplay = document.getElementById('currentNick');
-
-        if (currentNickDisplay) currentNickDisplay.innerText = userName;
-
-        const SERVER_URL = 'https://hello-machi-backend.onrender.com';
+        // ============================================================
+        // MULTI-SERVER FALLBACK LIST — add backup servers below
+        // ============================================================
+        const SERVER_LIST = [
+            'https://hello-machi-backend.onrender.com',   // Primary
+            // 'https://hello-machi-backup.onrender.com', // ← Backup (uncomment to enable)
+        ];
+        let activeServer = null;
 
         function showError(message) {
             const existing = document.querySelector('.error-banner');
@@ -189,39 +189,62 @@
             chatMessages.prepend(banner);
         }
 
-        function setupSocket() {
-            console.log('[Chat] Connecting to:', SERVER_URL);
-            socket = io(SERVER_URL, {
+        function tryServer(index) {
+            if (index >= SERVER_LIST.length) {
+                showError('⚠️ All chat servers are offline. Please try again later.');
+                return;
+            }
+            const url = SERVER_LIST[index];
+            console.log(`[Chat] Trying server ${index + 1}/${SERVER_LIST.length}: ${url}`);
+
+            const newSocket = io(url, {
                 transports: ['websocket', 'polling'],
-                reconnectionAttempts: 5
+                reconnectionAttempts: 3,
+                timeout: 8000
             });
 
-            socket.on('connect', () => {
-                console.log('[Chat] Connected ✓');
+            const timer = setTimeout(() => {
+                if (!newSocket.connected) {
+                    console.warn(`[Chat] Server ${index + 1} timed out, trying next...`);
+                    newSocket.disconnect();
+                    tryServer(index + 1);
+                }
+            }, 9000);
+
+            newSocket.on('connect', () => {
+                clearTimeout(timer);
+                socket = newSocket;
+                activeServer = url;
+                console.log(`[Chat] ✓ Connected to server ${index + 1}: ${url}`);
                 const existing = document.querySelector('.error-banner');
                 if (existing) existing.remove();
             });
 
-            socket.on('connect_error', (err) => {
-                console.warn('[Chat] Error:', err);
-                showError('⚠️ Cannot connect to chat server. Check your internet or try again.');
+            newSocket.on('connect_error', () => {
+                clearTimeout(timer);
+                console.warn(`[Chat] Server ${index + 1} failed, trying next...`);
+                newSocket.disconnect();
+                tryServer(index + 1);
             });
 
-            socket.on('chat_history', (history) => {
+            newSocket.on('chat_history', (history) => {
                 chatMessages.innerHTML = '';
                 history.forEach(appendMessage);
                 chatMessages.scrollTop = chatMessages.scrollHeight;
             });
 
-            socket.on('new_message', (msg) => {
+            newSocket.on('new_message', (msg) => {
                 appendMessage(msg);
-                // Robust Auto-Scroll
-                setTimeout(() => {
-                    chatMessages.scrollTop = chatMessages.scrollHeight;
-                }, 100);
+                setTimeout(() => { chatMessages.scrollTop = chatMessages.scrollHeight; }, 100);
+            });
+
+            newSocket.on('user_count', (count) => {
+                const countEl = document.getElementById('chatOnlineCount');
+                if (countEl) countEl.innerText = count + ' ONLINE';
             });
         }
-        setupSocket();
+        }
+        tryServer(0); // Start with first server
 
         function appendMessage(msg) {
             const div = document.createElement('div');

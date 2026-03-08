@@ -179,6 +179,7 @@
             // 'https://hello-machi-backup.onrender.com', // ← Backup (uncomment to enable)
         ];
         let activeServer = null;
+        let socketConnected = false;
 
         function showError(message) {
             const existing = document.querySelector('.error-banner');
@@ -213,11 +214,22 @@
 
             newSocket.on('connect', () => {
                 clearTimeout(timer);
+                if (socketConnected) {
+                    newSocket.disconnect();
+                    return;
+                }
+                socketConnected = true;
                 socket = newSocket;
                 activeServer = url;
                 console.log(`[Chat] ✓ Connected to server ${index + 1}: ${url}`);
                 const existing = document.querySelector('.error-banner');
                 if (existing) existing.remove();
+            });
+
+            newSocket.on('disconnect', () => {
+                if (activeServer === url) {
+                    socketConnected = false;
+                }
             });
 
             newSocket.on('connect_error', () => {

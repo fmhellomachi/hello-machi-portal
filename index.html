@@ -30,7 +30,8 @@
                 // 'https://your-railway-backend.up.railway.app', // ← Or Railway
             ];
 
-        let activeServerUrl = null; // Set once a server is found working
+        let activeServerUrl = null; 
+        let socketConnected = false;
 
         function initSocket() {
             tryNextServer(0);
@@ -72,6 +73,11 @@
 
                 newSocket.on('connect', () => {
                     clearTimeout(fallbackTimer);
+                    if (socketConnected) {
+                        newSocket.disconnect();
+                        return;
+                    }
+                    socketConnected = true;
                     activeServerUrl = serverUrl;
                     socket = newSocket;
                     console.log(`[Chat] ✓ Connected to server ${index + 1}: ${serverUrl}`);
@@ -86,57 +92,19 @@
                     tryNextServer(index + 1);
                 });
 
-                newSocket.on('disconnect', () => updateChatStatus(false));
+                newSocket.on('disconnect', () => {
+                    if (activeServerUrl === serverUrl) {
+                        socketConnected = false;
+                        updateChatStatus(false);
+                    }
+                });
             };
 
             try { document.head.appendChild(s); }
             catch (e) { tryNextServer(index + 1); }
         }
 
-        function setupChat() {
-            if (!socket) return;
-            const chatBox = document.getElementById('chatMessages');
 
-            socket.on('chat_history', (history) => {
-                if (chatBox) {
-                    chatBox.innerHTML = '';
-                    history.forEach(appendPortalMessage);
-                    chatBox.scrollTop = chatBox.scrollHeight;
-                }
-            });
-
-            socket.on('new_message', (msg) => {
-                if (chatBox) {
-                    appendPortalMessage(msg);
-                    chatBox.scrollTop = chatBox.scrollHeight;
-                }
-            });
-
-            socket.on('chat_cleared', (data) => {
-                if (chatBox) {
-                    chatBox.innerHTML = `<div class="system-msg" style="text-align:center; color:#888; font-size:0.8rem; padding:20px;">🗑 Chat was cleared by ${data.adminUser}</div>`;
-                }
-            });
-
-            socket.on('user_count', (count) => {
-                console.log(`[Chat] Incoming User Count: ${count}`);
-                updateOnlineCount(count);
-            });
-        }
-
-        function appendPortalMessage(msg) {
-            const chatBox = document.getElementById('chatMessages');
-            if (!chatBox) return;
-            const div = document.createElement('div');
-            div.className = 'chat-msg';
-            div.style.marginBottom = '12px';
-            div.innerHTML = `
-                <span class="user" style="color: var(--accent-gold); font-weight: bold; font-size: 0.8rem; display: block;">${msg.user}</span>
-                <span class="text" style="color: #eee; font-size: 0.9rem;">${msg.text}</span>
-                <span class="time" style="color: #555; font-size: 0.65rem; display: block; text-align: right; margin-top: 4px;">${msg.time}</span>
-            `;
-            chatBox.appendChild(div);
-        }
 
         function updateChatStatus(connected) {
             const dot = document.getElementById('chatStatusDot');
@@ -926,21 +894,39 @@
         };
 
         // --- CHAT LOGIC ---
+        let listenersAttached = false;
         function setupChat() {
-            if (!socket || !socket.on) return;
+            if (!socket || !socket.on || listenersAttached) return;
             console.log('[Chat] Setting up listeners...');
+            listenersAttached = true;
 
             socket.on('chat_history', (history) => {
                 console.log('[Chat] History received:', history.length);
-                chatMessages.innerHTML = '';
-                history.forEach(appendMessage);
-                chatMessages.scrollTop = chatMessages.scrollHeight;
+                const chatBox = document.getElementById('chatMessages');
+                if (chatBox) {
+                    chatBox.innerHTML = '';
+                    history.forEach(appendMessage);
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                }
             });
 
             socket.on('new_message', (msg) => {
                 console.log('[Chat] Incoming:', msg.text);
                 appendMessage(msg);
-                chatMessages.scrollTop = chatMessages.scrollHeight;
+                const chatBox = document.getElementById('chatMessages');
+                if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
+            });
+
+            socket.on('chat_cleared', (data) => {
+                const chatBox = document.getElementById('chatMessages');
+                if (chatBox) {
+                    chatBox.innerHTML = `<div class="system-msg" style="text-align:center; color:#888; font-size:0.8rem; padding:20px;">🗑 Chat was cleared by ${data.adminUser}</div>`;
+                }
+            });
+
+            socket.on('user_count', (count) => {
+                console.log(`[Chat] Incoming User Count: ${count}`);
+                updateOnlineCount(count);
             });
         }
 

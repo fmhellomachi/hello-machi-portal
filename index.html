@@ -119,6 +119,7 @@
             });
 
             socket.on('user_count', (count) => {
+                console.log(`[Chat] Incoming User Count: ${count}`);
                 updateOnlineCount(count);
             });
         }
@@ -152,7 +153,7 @@
             if (countEl) countEl.innerText = count + ' ONLINE';
             if (adminCountEl) adminCountEl.innerText = count;
         }
-        initSocket();
+        // initSocket() moved to window.onload to ensure UI is ready
     </script>
 
     <style>
@@ -567,6 +568,9 @@
                 <span
                     style="display: block; letter-spacing: 4px; color: #333; font-weight: 800; font-family: var(--font-head);">PROUDLY
                     TAMIL &bull; PROUDLY GLOBAL</span>
+                <div style="margin-top: 15px;">
+                    <a id="footerCustomLink" href="#" target="_blank" style="display: none; color: var(--accent-gold); text-decoration: none; font-size: 0.8rem; border: 1px solid rgba(255,207,113,0.3); padding: 5px 12px; border-radius: 20px; transition: 0.3s;">Visit Official Site</a>
+                </div>
             </footer>
 
         </div>
@@ -1012,8 +1016,11 @@
             if (config.youtube_url) document.getElementById('ytPortalLink').href = config.youtube_url;
             if (config.instagram_url) document.getElementById('igPortalLink').href = config.instagram_url;
             if (config.custom_link) {
-                // Optionally add a link for the custom URL if desired, 
-                // for now we ensure it's in the config object for the admin panel.
+                const footerLink = document.getElementById('footerCustomLink');
+                if (footerLink) {
+                    footerLink.href = config.custom_link;
+                    footerLink.style.display = 'inline-block';
+                }
             }
 
             renderSchedule();
@@ -1133,7 +1140,10 @@
 
         // Removed duplicate playBtn.onclick — triggerPlay() above is the canonical handler
 
-        window.onload = loadConfig;
+        window.onload = () => {
+            loadConfig();
+            initSocket();
+        };
 
         // --- ADMIN UI LOGIC ---
         const settingsBtn = document.getElementById('settingsBtn');

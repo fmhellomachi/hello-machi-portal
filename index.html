@@ -976,7 +976,6 @@
 
         // Initial setup in case socket connected before this script ran
         if (socket.connected) setupChat();
-        startPrimaryRecovery(); // Enable auto-reconnect monitor
 
         // ============================================================
         // SERVER LIST FOR CONFIG API (same as socket list above)
@@ -1160,6 +1159,7 @@
         window.onload = () => {
             loadConfig();
             initSocket();
+            startPrimaryRecovery(); // Start after config is loaded
         };
 
         // --- ADMIN UI LOGIC ---

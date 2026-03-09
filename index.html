@@ -810,7 +810,13 @@
             if (mode === 'fallback') return config.fallback_stream_url || config.stream_url;
             
             // Auto mode
-            return fallbackActive ? (config.fallback_stream_url || config.stream_url) : (config.stream_url || defaultConfig.stream_url);
+            let url = fallbackActive ? (config.fallback_stream_url || config.stream_url) : (config.stream_url || defaultConfig.stream_url);
+            
+            // Add cache-buster to prevent "buzzing" on old cached fragments if switching
+            if (url && url.includes('?')) url += '&t=' + Date.now();
+            else url += '?t=' + Date.now();
+            
+            return url;
         }
 
         function startFallbackMonitor() {
@@ -824,7 +830,7 @@
 
         function handleAudioStall() {
             if (stallTimeout || fallbackActive) return;
-            const timeoutSec = config.fallback_timeout || 10;
+            const timeoutSec = config.fallback_timeout || 25;
             const mode = config.stream_mode || 'auto';
             
             if (mode !== 'auto' || !config.fallback_stream_url) return;
@@ -853,6 +859,7 @@
 
                     const targetStream = getActiveStreamUrl();
                     audio.src = targetStream;
+                    audio.preload = "auto"; // Improved buffering
                     audio.load();
 
                     audio.play().then(() => {
@@ -969,6 +976,7 @@
 
         // Initial setup in case socket connected before this script ran
         if (socket.connected) setupChat();
+        startPrimaryRecovery(); // Enable auto-reconnect monitor
 
         // ============================================================
         // SERVER LIST FOR CONFIG API (same as socket list above)
@@ -1283,6 +1291,42 @@
             } else {
                 alert('❌ Not connected to chat server. Make sure the server is running.');
             }
+        }
+
+        // --- PRIMARY RECOVERY LOGIC ---
+        let recoveryInterval = null;
+        function startPrimaryRecovery() {
+            if (recoveryInterval) return;
+            console.log("[Recovery] Starting primary stream monitor...");
+            recoveryInterval = setInterval(async () => {
+                const mode = config.stream_mode || 'auto';
+                if (fallbackActive && isPlaying && mode === 'auto') {
+                    try {
+                        console.log("[Recovery] Checking if Primary is back...");
+                        // Use a fetch check to see if the primary URL is responding
+                        const response = await fetch(config.stream_url, { 
+                            method: 'HEAD', 
+                            mode: 'no-cors', 
+                            cache: 'no-store' 
+                        });
+                        
+                        // If we get here without an error, the server is reachable
+                        console.log("[Recovery] Primary reachable. Attempting to switch back in 10s...");
+                        
+                        setTimeout(() => {
+                            // double check we are still on fallback and playing
+                            if (fallbackActive && isPlaying) {
+                                console.warn("[Audio] RECONNECTING TO PRIMARY STREAM ✓");
+                                fallbackActive = false;
+                                isPlaying = false; 
+                                triggerPlay(); // This will now pick up the primary URL
+                            }
+                        }, 10000);
+                    } catch (e) {
+                        console.warn("[Recovery] Primary still down.");
+                    }
+                }
+            }, 300000); // Check every 5 minutes
         }
     </script>
 </body>

@@ -723,6 +723,31 @@
                         </div>
                     </div>
                     <div class="dashboard-section">
+                        <h4 class="section-title">📢 Global Announcements (Popups)</h4>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div class="form-group">
+                                <label>Popup ID (Change this to show a new popup)</label>
+                                <input type="text" id="cfg-popup-id" placeholder="e.g. event_001">
+                            </div>
+                            <div class="form-group">
+                                <label>Popup Title</label>
+                                <input type="text" id="cfg-popup-title" placeholder="Announcement Title">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Popup Message (Supports links)</label>
+                            <textarea id="cfg-popup-msg" style="width: 100%; height: 80px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: #fff; padding: 10px;" placeholder="Enter message here..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Popup Image URL (Optional header image)</label>
+                            <input type="text" id="cfg-popup-img" placeholder="https://.../banner.jpg">
+                        </div>
+                        <div class="form-group">
+                            <label>Popup Target URL (Optional 'Learn More' link)</label>
+                            <input type="text" id="cfg-popup-url" placeholder="https://...">
+                        </div>
+                    </div>
+                    <div class="dashboard-section">
                         <h4 class="section-title">⏰ Program Schedule</h4>
                         <div id="programEditList"></div>
                         <button type="button" class="add-btn" onclick="addProgramRow()"
@@ -1250,6 +1275,13 @@
                 document.getElementById('cfg-update-msg').value = config.update_message || '';
                 document.getElementById('cfg-request-msg').value = config.request_song_message || '';
                 document.getElementById('cfg-status-msg').value = config.status_message || '';
+                
+                // Announcements
+                document.getElementById('cfg-popup-id').value = config.popup_id || '';
+                document.getElementById('cfg-popup-title').value = config.popup_title || '';
+                document.getElementById('cfg-popup-msg').value = config.popup_message || '';
+                document.getElementById('cfg-popup-img').value = config.popup_image_url || '';
+                document.getElementById('cfg-popup-url').value = config.popup_url || '';
 
                 renderProgramEditList();
                 document.getElementById('admin-login-view').style.display = 'none';
@@ -1315,6 +1347,11 @@
                 "update_message": document.getElementById('cfg-update-msg').value,
                 "request_song_message": document.getElementById('cfg-request-msg').value,
                 "status_message": document.getElementById('cfg-status-msg').value,
+                "popup_id": document.getElementById('cfg-popup-id').value,
+                "popup_title": document.getElementById('cfg-popup-title').value,
+                "popup_message": document.getElementById('cfg-popup-msg').value,
+                "popup_image_url": document.getElementById('cfg-popup-img').value,
+                "popup_url": document.getElementById('cfg-popup-url').value,
                 "programs": []
             };
 

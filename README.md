@@ -3,7 +3,7 @@
 Hello Machi FM live radio portal — hosted on GitHub Pages.
 
 ## Hosted At
-https://hello-machi.github.io/hello-machi-portal/
+https://fmhellomachi.github.io/hello-machi-portal/
 
 ## Files
 - `index.html` — The portal web app

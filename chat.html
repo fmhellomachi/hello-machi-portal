@@ -157,8 +157,9 @@
                 <span id="chatOnlineCount" style="color: #888; font-size: 0.7rem; font-weight: bold; background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px;">0 ONLINE</span>
             </div>
         </div>
-        <div style="font-size: 0.8rem; color: #777;">
+        <div style="font-size: 0.8rem; color: #777; display:flex; align-items:center; gap:10px;">
             Name: <span id="currentNick" style="color: var(--accent-gold);">Machi User</span>
+            <button id="chatRequestBtn" style="background: linear-gradient(135deg,#ffcf71,#b8860b); border:none; border-radius:20px; padding:5px 12px; color:#000; font-weight:800; font-size:0.72rem; cursor:pointer; letter-spacing:0.5px;">🎵 REQUEST</button>
         </div>
     </div>
 
@@ -171,6 +172,7 @@
         <button id="sendMessageBtn">SEND</button>
     </div>
 
+    <script>
         // ============================================================
         // MULTI-SERVER FALLBACK LIST — add backup servers below
         // ============================================================
@@ -278,6 +280,21 @@
         };
 
         chatInput.onkeyup = (e) => { if (e.key === 'Enter') sendBtn.click(); };
+
+        // Song Request Button — loads config to decide behavior
+        let chatConfig = null;
+        fetch('./config.json').then(r => r.json()).then(cfg => { chatConfig = cfg; }).catch(() => {});
+        document.getElementById('chatRequestBtn').onclick = () => {
+            if (chatConfig && chatConfig.song_request_enabled && chatConfig.song_request_url) {
+                window.open(chatConfig.song_request_url, '_blank');
+            } else {
+                const num = (chatConfig && chatConfig.whatsapp_number) || '+91 9092363433';
+                const cleanNum = num.replace(/\D/g, '');
+                const name = localStorage.getItem('machi-nickname') || 'Listener';
+                const msg = encodeURIComponent(`Hello Machi FM! I am ${name} and I have a song request: `);
+                window.open(`https://api.whatsapp.com/send?phone=${cleanNum}&text=${msg}`, '_blank');
+            }
+        };
 
         // Handle name change from Android if needed
         window.setNickname = (name) => {

@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FM Admin | Hello Machi FM</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background: #0a0a0f; color: white; min-height: 100vh; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; border-bottom: 1px solid #333; padding-bottom: 20px; }
+        .cms-card { background: #1a1a24; border: 1px solid #333; border-radius: 20px; padding: 30px; margin-bottom: 30px; }
+        .cms-card h3 { color: var(--primary); margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; margin-bottom: 8px; font-size: 0.9rem; color: #888; }
+        input, textarea { width: 100%; background: #0a0a0f; border: 1px solid #444; color: white; padding: 12px; border-radius: 10px; font-size: 1rem; }
+        .btn-save { background: var(--primary); color: black; border: none; padding: 12px 30px; border-radius: 10px; cursor: pointer; font-weight: bold; width: 100%; }
+        .schedule-item { background: #0a0a0f; padding: 15px; border-radius: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #222; flex-wrap: wrap; gap: 10px; }
+        .rj-preview { width: 40px; height: 40px; border-radius: 8px; object-fit: contain; border: 1px solid var(--primary); background: #000; }
+        .add-row { display: grid; grid-template-columns: 1fr 1fr 2fr 1fr 2fr auto; gap: 10px; margin-top: 20px; }
+        @media (max-width: 768px) {
+            .add-row { grid-template-columns: 1fr; }
+            .form-group[style*="grid"] { grid-template-columns: 1fr !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>General FM Admin</h1>
+                <p style="color:#888;" id="admin-user-display">Loading...</p>
+            </div>
+            <div style="display:flex; gap:10px;">
+                <button id="login-btn" class="btn btn-primary" style="display:none; padding:10px 20px;">Login with Google</button>
+                <button id="logout-btn" class="btn btn-secondary" style="display:none; padding:10px 20px;">Logout</button>
+                <a href="admin.html" class="btn btn-secondary" style="text-decoration:none; color:white;"><i class="fa-solid fa-arrow-left"></i> Back to Hub</a>
+            </div>
+        </div>
+
+        <!-- Hero Section -->
+        <div class="cms-card">
+            <h3><i class="fa-solid fa-desktop"></i> Homepage Hero Content</h3>
+            <div class="form-group">
+                <label>Hero Main Title (HTML allowed)</label>
+                <input type="text" id="hero-title" placeholder="THE BEAT OF CHENNAI">
+            </div>
+            <div class="form-group">
+                <label>Hero Subtitle</label>
+                <textarea id="hero-subtitle" rows="3" placeholder="Your exclusive destination..."></textarea>
+            </div>
+            <button class="btn-save" onclick="saveHero()">PUBLISH HOMEPAGE CHANGES</button>
+        </div>
+
+        <!-- App Settings Section -->
+        <div class="cms-card">
+            <h3><i class="fa-solid fa-mobile-screen-button"></i> App Settings & Updates</h3>
+            <div class="form-group">
+                <label>VLC Audio Stream URL</label>
+                <input type="text" id="cfg-stream-url" placeholder="https://...">
+            </div>
+            <div class="form-group">
+                <label>Backup Audio Stream URL</label>
+                <input type="text" id="cfg-fallback-url" placeholder="https://...">
+            </div>
+            <div class="form-group">
+                <label>HLS Stream URL (Data Saver)</label>
+                <input type="text" id="cfg-hls-url" placeholder="https://.../live.m3u8">
+            </div>
+            <div class="form-group" style="display: grid; grid-template-columns: 1fr 2fr; gap: 20px;">
+                <div>
+                    <label>Latest App Version Code</label>
+                    <input type="number" id="cfg-version-code" placeholder="16">
+                    <div id="gh-version-display" style="font-size:0.75rem; color:#888; margin-top:4px;"></div>
+                </div>
+                <div>
+                    <label>APK Download URL</label>
+                    <input type="text" id="cfg-apk-url" placeholder="https://...">
+                </div>
+            </div>
+            <button type="button" id="sync-github-btn" style="background:#222; color:#FFD700; border:1px solid #FFD700; padding:8px 16px; border-radius:8px; cursor:pointer; font-size:0.8rem; margin-bottom:10px;" onclick="syncFromGitHub()">⬇ Sync from GitHub</button>
+            <div class="form-group">
+                <label>Update Banner Message</label>
+                <input type="text" id="cfg-update-msg" placeholder="A new version of Hello Machi FM is available...">
+            </div>
+            <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
+                <div>
+                    <label>Status Message</label>
+                    <input type="text" id="cfg-status-msg" placeholder="Synced via Vercel">
+                </div>
+                <div>
+                    <label>Welcome Title</label>
+                    <input type="text" id="cfg-welcome-title" placeholder="HELLO MACHI FM">
+                </div>
+                <div>
+                    <label>Welcome Greeting</label>
+                    <input type="text" id="cfg-welcome-greeting" placeholder="இது நம்ம ஏரியா மச்சி">
+                </div>
+            </div>
+            <button class="btn-save" style="background:#ff9800; color:black;" onclick="saveAppSettings()">PUBLISH APP SETTINGS</button>
+            <div id="live-api-status" style="margin-top: 12px; padding: 10px 14px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(255,255,255,0.06); font-size: 0.8rem; color: #888;">
+                Loading live API status...
+            </div>
+        </div>
+
+        <!-- Branding & Social Section -->
+        <div class="cms-card">
+            <h3><i class="fa-solid fa-palette"></i> Branding & Social Links</h3>
+            <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div>
+                    <label>Logo URL</label>
+                    <input type="text" id="cfg-logo" placeholder="https://...logo.jpg">
+                </div>
+                <div>
+                    <label>Accent Color</label>
+                    <input type="text" id="cfg-accent" placeholder="#D4AF37">
+                </div>
+            </div>
+            <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div>
+                    <label>WhatsApp Number</label>
+                    <input type="text" id="cfg-wa-num" placeholder="+91 9092363433">
+                </div>
+                <div>
+                    <label>WhatsApp Message</label>
+                    <input type="text" id="cfg-wa-msg" placeholder="Hello Machi FM! 🎵">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Request Song Message</label>
+                <input type="text" id="cfg-request-msg" placeholder="I'd like to request a song 🎵">
+            </div>
+            <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px;">
+                <div>
+                    <label>Facebook URL</label>
+                    <input type="text" id="cfg-fb" placeholder="https://facebook.com/...">
+                </div>
+                <div>
+                    <label>Instagram URL</label>
+                    <input type="text" id="cfg-ig" placeholder="https://instagram.com/...">
+                </div>
+                <div>
+                    <label>YouTube URL</label>
+                    <input type="text" id="cfg-yt" placeholder="https://youtube.com/...">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Custom Link (used by app)</label>
+                <input type="text" id="cfg-custom" placeholder="https://...">
+            </div>
+            <button class="btn-save" style="background:#D4AF37; color:black;" onclick="saveBranding()">PUBLISH BRANDING & SOCIAL</button>
+        </div>
+
+        <!-- Schedule Section -->
+        <div class="cms-card">
+            <h3><i class="fa-solid fa-calendar-alt"></i> Radio Program Schedule</h3>
+            <p style="color:#888; margin-bottom:20px;">Live status is automatically synced with IST based on your times.</p>
+            
+            <div id="schedule-list">
+                <!-- Injected via JS -->
+            </div>
+
+            <div class="add-row">
+                <input type="text" id="new-time" placeholder="Start (e.g. 06:00 AM)">
+                <input type="text" id="new-endtime" placeholder="End (e.g. 09:00 AM)">
+                <input type="text" id="new-title" placeholder="Show Name">
+                <input type="text" id="new-rj" placeholder="RJ Name">
+                <input type="text" id="new-rj-photo" placeholder="RJ Photo URL (Optional)">
+                <button onclick="addBlock()" style="background:var(--secondary); color:white; border:none; padding:10px 20px; border-radius:10px; cursor:pointer;">+ Add</button>
+            </div>
+            <button class="btn-save" style="margin-top:30px; background:var(--secondary);" onclick="saveSchedule()">PUBLISH NEW SCHEDULE</button>
+        </div>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-auth-compat.js"></script>
+    <script src="firebase-config.js"></script>
+
+    <script>
+        // auth and db are already declared in firebase-config.js
+        const provider = new firebase.auth.GoogleAuthProvider();
+        let scheduleBlocks = [];
+
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                db.collection('users').doc(user.uid).get().then(doc => {
+                    if (doc.exists) {
+                        const userData = doc.data();
+                        const role = userData.role ? userData.role.toLowerCase() : '';
+                        if (role === 'admin') {
+                            document.getElementById('admin-user-display').textContent = `Admin: ${user.email}`;
+                            document.getElementById('logout-btn').style.display = 'block';
+                            document.getElementById('login-btn').style.display = 'none';
+                            loadData();
+                        } else {
+                            alert("Access Denied: Your account role ('" + role + "') is not authorized.");
+                            auth.signOut();
+                        }
+                    } else {
+                        alert("Access Denied: Your account is not registered in the system.");
+                        auth.signOut();
+                    }
+                }).catch(err => {
+                    console.error("Role check error:", err);
+                    alert("Authorization error. Please contact admin.");
+                    auth.signOut();
+                });
+            } else {
+                document.getElementById('admin-user-display').textContent = "Unauthorized - Please Login";
+                document.getElementById('login-btn').style.display = 'block';
+                document.getElementById('logout-btn').style.display = 'none';
+            }
+        });
+
+        document.getElementById('login-btn').onclick = async () => {
+            try {
+                // Try popup first, if blocked use redirect
+                await auth.signInWithPopup(provider).catch(async (error) => {
+                    if (error.code === 'auth/popup-blocked') {
+                        await auth.signInWithRedirect(provider);
+                    } else {
+                        throw error;
+                    }
+                });
+            } catch (e) { 
+                console.error(e);
+                alert("Login failed: " + e.message); 
+            }
+        };
+        document.getElementById('logout-btn').onclick = () => auth.signOut();
+
+        async function loadData() {
+            // Load homepage CMS data
+            const doc = await db.collection('cms').doc('homepage').get();
+            if (doc.exists) {
+                const data = doc.data();
+                document.getElementById('hero-title').value = data.heroTitle || '';
+                document.getElementById('hero-subtitle').value = data.heroSubtitle || '';
+            }
+
+            // Load App config data (single source of truth for schedule)
+            const cfgDoc = await db.collection('cms').doc('config').get();
+            if (cfgDoc.exists) {
+                const cfg = cfgDoc.data();
+                document.getElementById('cfg-stream-url').value = cfg.stream_url || '';
+                document.getElementById('cfg-fallback-url').value = cfg.fallback_stream_url || '';
+                document.getElementById('cfg-hls-url').value = cfg.hls_stream_url || '';
+                document.getElementById('cfg-version-code').value = cfg.latest_version_code || 16;
+                document.getElementById('cfg-apk-url').value = cfg.apk_url || '';
+                document.getElementById('cfg-update-msg').value = cfg.update_message || '';
+                document.getElementById('cfg-status-msg').value = cfg.status_message || '';
+                document.getElementById('cfg-welcome-title').value = cfg.welcome_title || '';
+                document.getElementById('cfg-welcome-greeting').value = cfg.welcome_greeting || '';
+                document.getElementById('cfg-logo').value = cfg.logo_url || '';
+                document.getElementById('cfg-accent').value = cfg.accent_color || '';
+                document.getElementById('cfg-wa-num').value = cfg.whatsapp_number || '';
+                document.getElementById('cfg-wa-msg').value = cfg.whatsapp_message || '';
+                document.getElementById('cfg-request-msg').value = cfg.request_song_message || '';
+                document.getElementById('cfg-fb').value = cfg.facebook_url || '';
+                document.getElementById('cfg-ig').value = cfg.instagram_url || '';
+                document.getElementById('cfg-yt').value = cfg.youtube_url || '';
+                document.getElementById('cfg-custom').value = cfg.custom_link || '';
+                scheduleBlocks = cfg.programs || cfg.scheduleBlocks || [];
+            }
+            renderScheduleUI();
+
+            // Also fetch live API status to show auto-detected values from GitHub
+            try {
+                const apiRes = await fetch('/api/config');
+                if (apiRes.ok) {
+                    const apiCfg = await apiRes.json();
+                    const liveStatus = document.getElementById('live-api-status');
+                    if (liveStatus) {
+                        const verName = apiCfg.latest_version_name ? `v${apiCfg.latest_version_name}` : `code ${apiCfg.latest_version_code}`;
+                        liveStatus.innerHTML = `
+                            🤖 <b>GitHub Release</b> (auto-detected)<br>
+                            📦 <b>${verName}</b> &nbsp;|&nbsp;
+                            🔗 <a href="${apiCfg.apk_url}" target="_blank" style="color: #FFD700;">APK URL</a>
+                            &nbsp;|&nbsp;
+                            <a href="#" onclick="syncFromGitHub(); return false;" style="color: #FFD700; text-decoration: underline;">Use this version</a>
+                        `;
+                    }
+                    // Show GitHub version info below the form fields
+                    const ghDisplay = document.getElementById('gh-version-display');
+                    if (ghDisplay && apiCfg.latest_version_name) {
+                        ghDisplay.innerHTML = `GitHub: <b style="color:#FFD700;">v${apiCfg.latest_version_name}</b> (code: ${apiCfg.latest_version_code})`;
+                    }
+                }
+            } catch (e) {
+                console.error("Live API fetch error:", e);
+            }
+        }
+
+        async function syncFromGitHub() {
+            try {
+                const apiRes = await fetch('/api/config?t=' + Date.now());
+                if (!apiRes.ok) throw new Error('API fetch failed');
+                const apiCfg = await apiRes.json();
+                document.getElementById('cfg-version-code').value = apiCfg.latest_version_code || '';
+                document.getElementById('cfg-apk-url').value = apiCfg.apk_url || '';
+                const verName = apiCfg.latest_version_name ? `v${apiCfg.latest_version_name}` : `code ${apiCfg.latest_version_code}`;
+                alert(`✅ Synced from GitHub!\nVersion: ${verName}\nAPK URL: ${apiCfg.apk_url}`);
+            } catch (e) {
+                alert('❌ Failed to fetch from GitHub: ' + e.message);
+            }
+        }
+
+        async function saveAppSettings() {
+            try {
+                const freshDoc = await db.collection('cms').doc('config').get();
+                const fresh = freshDoc.exists ? freshDoc.data() : {};
+                await db.collection('cms').doc('config').set({
+                    ...fresh,
+                    stream_url: document.getElementById('cfg-stream-url').value,
+                    fallback_stream_url: document.getElementById('cfg-fallback-url').value,
+                    hls_stream_url: document.getElementById('cfg-hls-url').value,
+                    latest_version_code: parseInt(document.getElementById('cfg-version-code').value, 10) || 16,
+                    apk_url: document.getElementById('cfg-apk-url').value,
+                    update_message: document.getElementById('cfg-update-msg').value,
+                    status_message: document.getElementById('cfg-status-msg').value,
+                    welcome_title: document.getElementById('cfg-welcome-title').value,
+                    welcome_greeting: document.getElementById('cfg-welcome-greeting').value
+                }, { merge: true });
+                await syncToRender();
+                alert("App settings updated! Apps will reflect this update.");
+            } catch (e) {
+                alert("Save failed: " + e.message);
+            }
+        }
+
+        async function saveBranding() {
+            try {
+                const freshDoc = await db.collection('cms').doc('config').get();
+                const fresh = freshDoc.exists ? freshDoc.data() : {};
+                await db.collection('cms').doc('config').set({
+                    ...fresh,
+                    logo_url: document.getElementById('cfg-logo').value,
+                    accent_color: document.getElementById('cfg-accent').value,
+                    whatsapp_number: document.getElementById('cfg-wa-num').value,
+                    whatsapp_message: document.getElementById('cfg-wa-msg').value,
+                    request_song_message: document.getElementById('cfg-request-msg').value,
+                    facebook_url: document.getElementById('cfg-fb').value,
+                    instagram_url: document.getElementById('cfg-ig').value,
+                    youtube_url: document.getElementById('cfg-yt').value,
+                    custom_link: document.getElementById('cfg-custom').value
+                }, { merge: true });
+                await syncToRender();
+                alert("Branding & social links saved and synced!");
+            } catch (e) {
+                alert("Save failed: " + e.message);
+            }
+        }
+
+        async function syncToRender() {
+            try {
+                const cfgDoc = await db.collection('cms').doc('config').get();
+                if (cfgDoc.exists) {
+                    await fetch('https://hello-machi-backend.onrender.com/config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(cfgDoc.data())
+                    });
+                }
+            } catch (e) {
+                console.error("Render sync failed:", e);
+            }
+        }
+
+        async function saveHero() {
+            try {
+                await db.collection('cms').doc('homepage').set({
+                    heroTitle: document.getElementById('hero-title').value,
+                    heroSubtitle: document.getElementById('hero-subtitle').value
+                }, { merge: true });
+                alert("Homepage updated!");
+            } catch (e) { alert(e.message); }
+        }
+
+        function renderScheduleUI() {
+            const list = document.getElementById('schedule-list');
+            list.innerHTML = '';
+            scheduleBlocks.forEach((b, i) => {
+                const div = document.createElement('div');
+                div.className = 'schedule-item';
+                div.innerHTML = `
+                    <div style="display:flex; align-items:center; gap:15px; flex:1;">
+                        <img src="${b.rjPhoto || 'logo.jpg'}" class="rj-preview" onerror="this.src='logo.jpg'">
+                        <div>
+                            <strong style="color:var(--primary); font-size:0.8rem;">${b.time} - ${b.endTime || '??'}</strong><br>
+                            <span style="font-size:1.1rem; font-weight:bold;">${b.title}</span><br>
+                            <small style="opacity:0.7;">Host: ${b.rj}</small>
+                        </div>
+                    </div>
+                    <button class="btn-delete" onclick="removeBlock(${i})"><i class="fa-solid fa-trash"></i></button>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        function addBlock() {
+            const time = document.getElementById('new-time').value;
+            const endTime = document.getElementById('new-endtime').value;
+            const title = document.getElementById('new-title').value;
+            const rj = document.getElementById('new-rj').value;
+            const rjPhoto = document.getElementById('new-rj-photo').value;
+
+            if(!time || !title) return alert("Start time and Title are required");
+            
+            scheduleBlocks.push({ time, endTime, title, rj, rjPhoto });
+            renderScheduleUI();
+            
+            document.getElementById('new-time').value = '';
+            document.getElementById('new-endtime').value = '';
+            document.getElementById('new-title').value = '';
+            document.getElementById('new-rj').value = '';
+            document.getElementById('new-rj-photo').value = '';
+        }
+
+        function removeBlock(i) {
+            scheduleBlocks.splice(i, 1);
+            renderScheduleUI();
+        }
+
+        async function saveSchedule() {
+            try {
+                const programs = scheduleBlocks.map(b => ({
+                    time: b.time,
+                    endTime: b.endTime,
+                    title: b.title,
+                    rj: b.rj
+                }));
+
+                // Save to cms/config (primary - used by mobile app & website API)
+                await db.collection('cms').doc('config').set({
+                    programs,
+                    scheduleBlocks
+                }, { merge: true });
+
+                // Also sync to cms/homepage (used by website schedule grid)
+                await db.collection('cms').doc('homepage').set({ scheduleBlocks }, { merge: true });
+
+                await syncToRender();
+                alert("Schedule published & synced to app!");
+            } catch (e) { alert(e.message); }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hello Machi FM | General Admin</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body {
+            background: #050505;
+            color: white;
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .hub-container {
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            text-align: center;
+            flex: 1;
+        }
+
+        .hub-header { margin-bottom: 40px; }
+        .hub-header img { width: 80px; height: 80px; border-radius: 12px; margin-bottom: 15px; border: 2px solid var(--primary); object-fit: contain; background: #000; }
+        .hub-header h1 { font-size: 2.5rem; letter-spacing: 2px; }
+
+        .hub-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+
+        .hub-card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 20px;
+            padding: 30px 20px;
+            text-decoration: none;
+            color: white;
+            transition: 0.3s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+        }
+
+        .hub-card:hover {
+            background: rgba(255, 20, 147, 0.1);
+            border-color: var(--primary);
+            transform: translateY(-5px);
+        }
+
+        .hub-card i { font-size: 2.5rem; color: var(--primary); }
+        .hub-card h3 { font-size: 1.5rem; }
+        .hub-card p { font-size: 0.9rem; opacity: 0.7; }
+
+        .btn-logout { margin-top: 40px; background: #222; color: white; border: none; padding: 10px 30px; border-radius: 50px; cursor: pointer; }
+        .btn-back { margin-top: 10px; background: transparent; color: #888; border: 1px solid #444; padding: 10px 30px; border-radius: 50px; cursor: pointer; text-decoration: none; display: inline-block; font-size: 0.8rem; }
+        .btn-back:hover { color: white; border-color: white; }
+
+        /* Config Modal */
+        .config-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.85);
+            z-index: 1000;
+            overflow-y: auto;
+            padding: 30px 15px;
+        }
+        .config-overlay.open { display: flex; align-items: flex-start; justify-content: center; }
+        .config-modal {
+            background: #111;
+            border: 1px solid #333;
+            border-radius: 20px;
+            padding: 30px;
+            max-width: 700px;
+            width: 100%;
+            margin: auto;
+        }
+        .config-modal h2 { margin-bottom: 25px; }
+        .config-section { margin-bottom: 25px; padding-bottom: 20px; border-bottom: 1px solid #222; }
+        .config-section h4 { color: var(--primary); font-size: 0.85rem; letter-spacing: 0.5px; margin-bottom: 15px; text-align: left; }
+        .config-row { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; text-align: left; }
+        .config-row label { font-size: 0.75rem; color: #888; font-weight: bold; letter-spacing: 0.3px; }
+        .config-row input, .config-row textarea {
+            width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #333;
+            background: #1a1a1a; color: white; outline: none; font-size: 0.9rem; box-sizing: border-box;
+        }
+        .config-row textarea { min-height: 60px; resize: vertical; }
+        .program-entry { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+        .program-entry input { flex: 1; min-width: 80px; padding: 8px 10px; border-radius: 8px; border: 1px solid #333; background: #1a1a1a; color: white; outline: none; font-size: 0.8rem; }
+        .program-entry button { background: #ff4d4d; border: none; color: white; border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 0.8rem; }
+        .btn-add-program { background: #222; border: 1px dashed #555; color: #aaa; padding: 8px; border-radius: 10px; cursor: pointer; width: 100%; margin-top: 5px; font-size: 0.8rem; }
+        .btn-add-program:hover { border-color: var(--primary); color: white; }
+        .config-actions { display: flex; gap: 10px; margin-top: 20px; }
+        .btn-save-config { flex: 1; padding: 14px; font-size: 1rem; font-weight: bold; background: var(--primary); color: black; border: none; cursor: pointer; border-radius: 50px; }
+        .btn-close-config { padding: 14px 25px; font-size: 1rem; background: #222; color: #888; border: 1px solid #444; cursor: pointer; border-radius: 50px; }
+        .btn-close-config:hover { color: white; border-color: white; }
+        #config-status { margin-top: 12px; font-size: 0.85rem; padding: 8px; border-radius: 8px; display: none; }
+        #config-status.success { display: block; background: rgba(40,167,69,0.15); color: #28a745; }
+        #config-status.error { display: block; background: rgba(255,77,77,0.15); color: #ff4d4d; }
+
+        @media (max-width: 600px) {
+            .hub-grid { grid-template-columns: 1fr; }
+            .hub-header h1 { font-size: 1.8rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="hub-container" id="admin-hub" style="display:none;">
+        <div class="hub-header">
+            <img src="logo.jpg" alt="Logo">
+            <h1>FM ADMIN HUB</h1>
+            <p>Welcome back, Admin</p>
+        </div>
+
+        <div class="hub-grid">
+            <!-- Super Singer Focus (Until May 1) -->
+            <a href="ss-admin.html" class="hub-card" style="border-color: var(--primary); background: rgba(255,20,147,0.05);">
+                <i class="fa-solid fa-microphone-lines"></i>
+                <h3>Super Singer 2026</h3>
+                <p>Manage participants, voting, and live reveals.</p>
+                <span class="badge badge-primary" style="background:var(--primary); color:black; font-size:0.7rem; padding:2px 10px; border-radius:10px; font-weight:900;">LIVE EVENT</span>
+            </a>
+
+            <!-- Master Admin Panel -->
+            <a href="fm-admin.html" class="hub-card" style="border-color: var(--primary); background: rgba(255,20,147,0.05);">
+                <i class="fa-solid fa-crown"></i>
+                <h3>Master Admin</h3>
+                <p>Full control: schedule, branding, app settings & social links.</p>
+            </a>
+
+            <a href="rj.html" class="hub-card">
+                <i class="fa-solid fa-tower-broadcast"></i>
+                <h3>RJ Control Panel</h3>
+                <p>Manage polls, shoutouts, and live studio interactions.</p>
+            </a>
+
+            <a href="users.html" class="hub-card">
+                <i class="fa-solid fa-users-gear"></i>
+                <h3>User Management</h3>
+                <p>Create and manage admin, RJ, and viewer accounts.</p>
+            </a>
+
+            <div class="hub-card" onclick="openConfigModal()">
+                <i class="fa-solid fa-sliders"></i>
+                <h3>Station Config</h3>
+                <p>Edit stream URLs, social links, and app settings.</p>
+            </div>
+
+            <a href="#" class="hub-card" onclick="alert('Listeners analytics coming soon...')">
+                <i class="fa-solid fa-chart-line"></i>
+                <h3>Analytics</h3>
+                <p>View listener stats and song requests.</p>
+            </a>
+        </div>
+
+        <div id="restriction-notice" style="display:none; color:#ff4d4d; margin-top:20px; font-weight:bold; background:rgba(255,0,0,0.1); padding:15px; border-radius:10px; border:1px solid #ff4d4d;">
+            <i class="fa-solid fa-circle-exclamation"></i> ACCESS DENIED: Your email is not authorized to access this panel.
+        </div>
+
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 10px;">
+            <button class="btn-logout" id="logout-btn">LOGOUT</button>
+            <a href="index.html" class="btn-back">RETURN TO MAIN WEBSITE</a>
+        </div>
+    </div>
+
+    <!-- Config Modal -->
+    <div class="config-overlay" id="config-overlay">
+        <div class="config-modal">
+            <h2>📡 Station Config</h2>
+            <div id="config-status"></div>
+
+            <div class="config-section">
+                <h4>🔊 STREAM SETUP</h4>
+                <div class="config-row"><label>Live Stream URL (Primary)</label><input type="text" id="cfg-stream"></div>
+                <div class="config-row"><label>Fallback Stream URL (Secondary)</label><input type="text" id="cfg-fallback"></div>
+                <div class="config-row"><label>HLS Stream URL (Data Saver)</label><input type="text" id="cfg-hls"></div>
+                <div class="config-row"><label>Logo URL</label><input type="text" id="cfg-logo"></div>
+                <div class="config-row"><label>Accent Color</label><input type="text" id="cfg-accent"></div>
+            </div>
+
+            <div class="config-section">
+                <h4>📱 APP & UPDATES</h4>
+                <div class="config-row"><label>Latest Version Code</label><input type="number" id="cfg-version"></div>
+                <div class="config-row"><label>APK Download URL</label><input type="text" id="cfg-apk"></div>
+                <div class="config-row" style="border:none; padding-top:0;">
+                    <div id="gh-version-display-admin" style="font-size:0.8rem; color:#888;"></div>
+                    <button type="button" onclick="syncFromGitHubAdmin()" style="background:#222; color:#FFD700; border:1px solid #FFD700; padding:6px 14px; border-radius:8px; cursor:pointer; font-size:0.75rem; margin-top:4px;">⬇ Sync from GitHub</button>
+                </div>
+                <div class="config-row"><label>Update Message</label><textarea id="cfg-update-msg"></textarea></div>
+                <div class="config-row"><label>Status Message</label><input type="text" id="cfg-status-msg"></div>
+            </div>
+
+            <div class="config-section">
+                <h4>📞 CONTACT & SOCIAL</h4>
+                <div class="config-row"><label>WhatsApp Number</label><input type="text" id="cfg-wa-num"></div>
+                <div class="config-row"><label>WhatsApp Message</label><input type="text" id="cfg-wa-msg"></div>
+                <div class="config-row"><label>Request Song Message</label><input type="text" id="cfg-request-msg"></div>
+                <div class="config-row"><label>Facebook URL</label><input type="text" id="cfg-fb"></div>
+                <div class="config-row"><label>Instagram URL</label><input type="text" id="cfg-ig"></div>
+                <div class="config-row"><label>YouTube URL</label><input type="text" id="cfg-yt"></div>
+                <div class="config-row"><label>Custom Link</label><input type="text" id="cfg-custom"></div>
+            </div>
+
+            <div class="config-section">
+                <h4>🎙️ WELCOME & BRANDING</h4>
+                <div class="config-row"><label>Welcome Title</label><input type="text" id="cfg-title"></div>
+                <div class="config-row"><label>Welcome Greeting</label><input type="text" id="cfg-greeting"></div>
+            </div>
+
+            <div class="config-section">
+                <h4>📅 PROGRAM SCHEDULE</h4>
+                <div id="cfg-programs-list"></div>
+                <button class="btn-add-program" onclick="addProgramEntry()">+ Add Show</button>
+            </div>
+
+            <div class="config-actions">
+                <button class="btn-close-config" onclick="closeConfigModal()">CANCEL</button>
+                <button class="btn-save-config" onclick="saveConfig()">SAVE & SYNC</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Login Screen -->
+    <div id="login-screen" style="flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px;">
+        <div style="text-align: center; background: rgba(15, 15, 15, 0.95); padding: 40px 30px; border-radius: 30px; border: 1px solid rgba(255,255,255,0.1); width: 100%; max-width: 400px; box-shadow: 0 15px 35px rgba(0,0,0,0.8);">
+            <img src="logo.jpg" style="width: 80px; height: 80px; border-radius: 12px; margin-bottom: 20px; object-fit: contain; background: #000; border: 1px solid #333;">
+            <h2 style="margin-bottom: 25px; font-weight: 900; letter-spacing: 1px;">FM STUDIO LOGIN</h2>
+            
+            <div style="margin-bottom: 15px; text-align: left;">
+                <label style="display: block; font-size: 0.75rem; color: #888; margin-bottom: 5px; font-weight: bold; letter-spacing: 0.5px;">EMAIL ADDRESS</label>
+                <input type="email" id="login-email" style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #333; background: #1a1a1a; color: white; outline: none; font-size: 1rem;" placeholder="Enter email">
+            </div>
+            
+            <div style="margin-bottom: 25px; text-align: left;">
+                <label style="display: block; font-size: 0.75rem; color: #888; margin-bottom: 5px; font-weight: bold; letter-spacing: 0.5px;">PASSWORD</label>
+                <input type="password" id="login-password" style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #333; background: #1a1a1a; color: white; outline: none; font-size: 1rem;" placeholder="••••••••">
+            </div>
+
+            <button id="login-btn" style="width: 100%; padding: 14px; font-size: 1.1rem; font-weight: bold; background: #ff1493; color: white; border: none; cursor: pointer; border-radius: 50px; transition: 0.2s;">
+                SIGN IN
+            </button>
+            
+            <div id="login-error" style="color: #ff4d4d; font-size: 0.85rem; margin-top: 15px; display: none; background: rgba(255,0,0,0.1); padding: 8px; border-radius: 6px;"></div>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore-compat.js"></script>
+    <script src="firebase-config.js"></script>
+
+    <script>
+        // auth and db are already declared in firebase-config.js
+        const hub = document.getElementById('admin-hub');
+        const login = document.getElementById('login-screen');
+        const notice = document.getElementById('restriction-notice');
+        const hubGrid = document.querySelector('.hub-grid');
+        const loginError = document.getElementById('login-error');
+
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                // Fetch user role from Firestore to enforce user-level restrictions
+                db.collection('users').doc(user.uid).get().then(doc => {
+                    if (doc.exists) {
+                        const userData = doc.data();
+                        const role = userData.role ? userData.role.toLowerCase() : '';
+                        
+                        if (role === 'admin') {
+                            hub.style.display = 'block';
+                            login.style.display = 'none';
+                            notice.style.display = 'none';
+                            hubGrid.style.opacity = '1';
+                            hubGrid.style.pointerEvents = 'auto';
+                        } else if (role === 'rj') {
+                            // RJs are redirected to the rj panel
+                            window.location.href = 'rj.html';
+                        } else {
+                            showAccessDenied("Account role ('" + role + "') is not authorized for Admin Hub.");
+                        }
+                    } else {
+                        showAccessDenied("UID is not registered in the system. Contact system administrator.");
+                    }
+                }).catch(err => {
+                    console.error("Firestore user role check error:", err);
+                    showAccessDenied("Error checking authorization: " + err.message);
+                });
+            } else {
+                hub.style.display = 'none';
+                login.style.display = 'flex';
+            }
+        });
+
+        function showAccessDenied(msg) {
+            hub.style.display = 'block';
+            login.style.display = 'none';
+            notice.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> ACCESS DENIED: ' + msg;
+            notice.style.display = 'block';
+            hubGrid.style.opacity = '0.2';
+            hubGrid.style.pointerEvents = 'none';
+        }
+
+        document.getElementById('login-btn').onclick = () => {
+            const email = document.getElementById('login-email').value.trim();
+            const password = document.getElementById('login-password').value;
+            
+            if (!email || !password) {
+                loginError.textContent = "Please fill in all fields.";
+                loginError.style.display = 'block';
+                return;
+            }
+            
+            loginError.style.display = 'none';
+            auth.signInWithEmailAndPassword(email, password).catch(error => {
+                console.error("Login failed:", error);
+                loginError.textContent = "Authentication failed: " + error.message;
+                loginError.style.display = 'block';
+            });
+        };
+
+        document.getElementById('logout-btn').onclick = () => {
+            auth.signOut().then(() => {
+                window.location.reload();
+            });
+        };
+
+        // --- Station Config ---
+        let programData = [];
+
+        function openConfigModal() {
+            document.getElementById('config-overlay').classList.add('open');
+            document.getElementById('config-status').style.display = 'none';
+            loadConfig();
+        }
+
+        function closeConfigModal() {
+            document.getElementById('config-overlay').classList.remove('open');
+        }
+
+        async function loadConfig() {
+            const defaults = {
+                stream_url: "https://hellomachifm.duckdns.org/listen/hello_machi_fm/radio.mp3",
+                fallback_stream_url: "https://sonic-ca.instainternet.com/8022/stream",
+                hls_stream_url: "https://hellomachifm.duckdns.org/hls/hello_machi_fm/live.m3u8",
+                logo_url: "https://hello-machi.github.io/hello-machi-portal/logo.jpg",
+                accent_color: "#D4AF37",
+                latest_version_code: 16,
+                apk_url: "https://github.com/fmhellomachi/hello-machi-backend/releases/download/V3/app-universal-release.apk",
+                update_message: "New update available! Tap to download the latest Hello Machi FM.",
+                status_message: "Synced via Cloud Panel",
+                whatsapp_number: "+91 9092363433",
+                whatsapp_message: "Hello Machi FM! 🎵",
+                request_song_message: "I'd like to request a song 🎵",
+                facebook_url: "https://www.facebook.com/hellomachifm",
+                instagram_url: "https://www.instagram.com/hellomachifm",
+                youtube_url: "https://www.youtube.com/@hellomachifm",
+                custom_link: "https://hellomachifm.vercel.app/api/config",
+                welcome_title: "HELLO MACHI FM",
+                welcome_greeting: "WELCOME TO",
+                programs: [
+                    {time:"06:00",endTime:"09:00",title:"Morning Vibes",rj:"RJ Malar"},
+                    {time:"09:00",endTime:"12:00",title:"Retro Hits",rj:"RJ Uthiran"},
+                    {time:"12:00",endTime:"16:00",title:"Midday Melodies",rj:"RJ Malar"},
+                    {time:"16:00",endTime:"20:00",title:"Evening Express",rj:"RJ Vijay"},
+                    {time:"20:00",endTime:"23:59",title:"Romantic Night",rj:"RJ Uthiran"},
+                    {time:"00:00",endTime:"06:00",title:"Iravin Madiyil",rj:"RJ Vijay"}
+                ]
+            };
+
+            try {
+                const doc = await db.collection('cms').doc('config').get();
+                let cfg = doc.exists ? doc.data() : null;
+                if (!cfg || Object.keys(cfg).length === 0) cfg = defaults;
+                populateConfigForm(cfg, defaults);
+            } catch (err) {
+                console.error("Firestore load failed, using defaults:", err);
+                populateConfigForm(defaults, defaults);
+            }
+
+            // Show GitHub auto-detected version
+            try {
+                const apiRes = await fetch('/api/config?t=' + Date.now());
+                if (apiRes.ok) {
+                    const apiCfg = await apiRes.json();
+                    const ghDisplay = document.getElementById('gh-version-display-admin');
+                    if (ghDisplay && apiCfg.latest_version_name) {
+                        ghDisplay.innerHTML = `GitHub: <b style="color:#FFD700;">v${apiCfg.latest_version_name}</b> (code: ${apiCfg.latest_version_code}) &nbsp; <a href="#" onclick="syncFromGitHubAdmin(); return false;" style="color:#FFD700; font-size:0.75rem;">use</a>`;
+                    }
+                }
+            } catch (e) {
+                console.error("GitHub API fetch error:", e);
+            }
+        }
+
+        function populateConfigForm(cfg, defaults) {
+            document.getElementById('cfg-stream').value = cfg.stream_url || defaults.stream_url;
+            document.getElementById('cfg-fallback').value = cfg.fallback_stream_url || defaults.fallback_stream_url;
+            document.getElementById('cfg-hls').value = cfg.hls_stream_url || defaults.hls_stream_url;
+            document.getElementById('cfg-logo').value = cfg.logo_url || defaults.logo_url;
+            document.getElementById('cfg-accent').value = cfg.accent_color || defaults.accent_color;
+            document.getElementById('cfg-version').value = cfg.latest_version_code || defaults.latest_version_code;
+            document.getElementById('cfg-apk').value = cfg.apk_url || defaults.apk_url;
+            document.getElementById('cfg-update-msg').value = cfg.update_message || defaults.update_message;
+            document.getElementById('cfg-status-msg').value = cfg.status_message || defaults.status_message;
+            document.getElementById('cfg-wa-num').value = cfg.whatsapp_number || defaults.whatsapp_number;
+            document.getElementById('cfg-wa-msg').value = cfg.whatsapp_message || defaults.whatsapp_message;
+            document.getElementById('cfg-request-msg').value = cfg.request_song_message || defaults.request_song_message;
+            document.getElementById('cfg-fb').value = cfg.facebook_url || defaults.facebook_url;
+            document.getElementById('cfg-ig').value = cfg.instagram_url || defaults.instagram_url;
+            document.getElementById('cfg-yt').value = cfg.youtube_url || defaults.youtube_url;
+            document.getElementById('cfg-custom').value = cfg.custom_link || defaults.custom_link;
+            document.getElementById('cfg-title').value = cfg.welcome_title || defaults.welcome_title;
+            document.getElementById('cfg-greeting').value = cfg.welcome_greeting || defaults.welcome_greeting;
+            programData = (cfg.programs && Array.isArray(cfg.programs) && cfg.programs.length > 0)
+                ? cfg.programs.map(p => ({...p})) : defaults.programs.map(p => ({...p}));
+            renderPrograms();
+        }
+
+        function renderPrograms() {
+            const list = document.getElementById('cfg-programs-list');
+            list.innerHTML = '';
+            programData.forEach((p, i) => {
+                const div = document.createElement('div');
+                div.className = 'program-entry';
+                div.innerHTML = `
+                    <input type="text" value="${p.time || ''}" placeholder="Start" onchange="programData[${i}].time=this.value">
+                    <input type="text" value="${p.endTime || ''}" placeholder="End" onchange="programData[${i}].endTime=this.value">
+                    <input type="text" value="${p.title || ''}" placeholder="Title" onchange="programData[${i}].title=this.value">
+                    <input type="text" value="${p.rj || ''}" placeholder="RJ" onchange="programData[${i}].rj=this.value">
+                    <button onclick="removeProgram(${i})">✕</button>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        function addProgramEntry() {
+            programData.push({ time: '', endTime: '', title: '', rj: '' });
+            renderPrograms();
+        }
+
+        function removeProgram(i) {
+            programData.splice(i, 1);
+            renderPrograms();
+        }
+
+        async function saveConfig() {
+            try {
+                // Read fresh data from Firestore first to avoid stale overwrites
+                const freshDoc = await db.collection('cms').doc('config').get();
+                const fresh = freshDoc.exists ? freshDoc.data() : {};
+
+                const merged = {
+                    ...fresh,
+                    stream_url: document.getElementById('cfg-stream').value,
+                    fallback_stream_url: document.getElementById('cfg-fallback').value,
+                    hls_stream_url: document.getElementById('cfg-hls').value,
+                    logo_url: document.getElementById('cfg-logo').value,
+                    accent_color: document.getElementById('cfg-accent').value,
+                    latest_version_code: parseInt(document.getElementById('cfg-version').value) || 1,
+                    apk_url: document.getElementById('cfg-apk').value,
+                    update_message: document.getElementById('cfg-update-msg').value,
+                    status_message: document.getElementById('cfg-status-msg').value,
+                    whatsapp_number: document.getElementById('cfg-wa-num').value,
+                    whatsapp_message: document.getElementById('cfg-wa-msg').value,
+                    request_song_message: document.getElementById('cfg-request-msg').value,
+                    facebook_url: document.getElementById('cfg-fb').value,
+                    instagram_url: document.getElementById('cfg-ig').value,
+                    youtube_url: document.getElementById('cfg-yt').value,
+                    custom_link: document.getElementById('cfg-custom').value,
+                    welcome_title: document.getElementById('cfg-title').value,
+                    welcome_greeting: document.getElementById('cfg-greeting').value,
+                    programs: programData.filter(p => p.title || p.time)
+                };
+
+                // Save to Firestore (used by Vercel API → Android app)
+                await db.collection('cms').doc('config').set(merged, { merge: true });
+                showConfigStatus('✅ Firestore saved! Syncing to Render...', 'success');
+
+                // Also sync to Render's config.json (used by web portal)
+                try {
+                    await fetch('https://hello-machi-backend.onrender.com/config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(merged)
+                    });
+                    showConfigStatus('✅ Config saved to Firestore + Render synced successfully!', 'success');
+                    alert('✅ Config saved & synced successfully!');
+                } catch (renderErr) {
+                    showConfigStatus('⚠️ Saved to Firestore, but Render sync failed: ' + renderErr.message, 'error');
+                    alert('⚠️ Saved to Firestore, but Render sync failed.');
+                }
+            } catch (err) {
+                showConfigStatus('Error saving config: ' + err.message, 'error');
+                alert('Error saving config: ' + err.message);
+            }
+        }
+
+        function showConfigStatus(msg, type) {
+            const el = document.getElementById('config-status');
+            el.textContent = msg;
+            el.className = type;
+            el.style.display = 'block';
+        }
+
+        async function syncFromGitHubAdmin() {
+            try {
+                const apiRes = await fetch('/api/config?t=' + Date.now());
+                if (!apiRes.ok) throw new Error('API fetch failed');
+                const apiCfg = await apiRes.json();
+                document.getElementById('cfg-version').value = apiCfg.latest_version_code || '';
+                document.getElementById('cfg-apk').value = apiCfg.apk_url || '';
+                const verName = apiCfg.latest_version_name ? `v${apiCfg.latest_version_name}` : `code ${apiCfg.latest_version_code}`;
+                alert(`✅ Synced from GitHub!\nVersion: ${verName}\nAPK URL: ${apiCfg.apk_url}`);
+            } catch (e) {
+                alert('❌ Failed to fetch from GitHub: ' + e.message);
+            }
+        }
+    </script>
+</body>
+</html>

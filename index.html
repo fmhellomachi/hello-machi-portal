@@ -1,1404 +1,355 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hello Machi FM | Live Studio Portal</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@600;700;800&display=swap"
-        rel="stylesheet">
-    <link rel="stylesheet" href="test-preview/style.css">
-    <!-- socket.io loaded conditionally: only on real server, never crashes the page -->
-    <script>
-        // Graceful socket.io stub — if server is not running, chat silently disabled
-        let socket = { on: () => { }, emit: () => { }, connected: false };
-
-        // ============================================================
-        // MULTI-SERVER FALLBACK LIST
-        // Add / remove servers here. The portal tries them in order.
-        // First one that connects wins. Others are ignored.
-        // ============================================================
-        const IS_LOCAL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        const SERVER_LIST = IS_LOCAL
-            ? ['http://localhost:3000']            // Only local in dev
-            : [
-                'https://hello-machi-backend.onrender.com',   // Primary (Render)
-                // 'https://hello-machi-backup.onrender.com', // ← Uncomment to add a backup
-                // 'https://your-railway-backend.up.railway.app', // ← Or Railway
-            ];
-
-        let activeServerUrl = null; 
-        let socketConnected = false;
-
-        function initSocket() {
-            tryNextServer(0);
-        }
-
-        function tryNextServer(index) {
-            if (index >= SERVER_LIST.length) {
-                console.warn('[Chat] All servers failed. Chat disabled.');
-                updateChatStatus(false);
-                return;
-            }
-            const serverUrl = SERVER_LIST[index];
-            console.log(`[Chat] Trying server ${index + 1}/${SERVER_LIST.length}: ${serverUrl}`);
-
-            const s = document.createElement('script');
-            s.src = serverUrl + '/socket.io/socket.io.js';
-
-            s.onerror = () => {
-                console.warn(`[Chat] Server ${index + 1} unreachable, trying next...`);
-                document.head.removeChild(s);
-                tryNextServer(index + 1); // Move to next
-            };
-
-            s.onload = () => {
-                console.log(`[Chat] socket.io loaded from server ${index + 1}, connecting...`);
-                const newSocket = io(serverUrl, {
-                    transports: ['websocket', 'polling'],
-                    reconnectionAttempts: 5,
-                    timeout: 8000
-                });
-
-                const fallbackTimer = setTimeout(() => {
-                    if (!newSocket.connected) {
-                        console.warn(`[Chat] Server ${index + 1} timed out, trying next...`);
-                        newSocket.disconnect();
-                        tryNextServer(index + 1);
-                    }
-                }, 9000);
-
-                newSocket.on('connect', () => {
-                    clearTimeout(fallbackTimer);
-                    if (socketConnected) {
-                        newSocket.disconnect();
-                        return;
-                    }
-                    socketConnected = true;
-                    activeServerUrl = serverUrl;
-                    socket = newSocket;
-                    console.log(`[Chat] ✓ Connected to server ${index + 1}: ${serverUrl}`);
-                    updateChatStatus(true);
-                    if (typeof setupChat === 'function') setupChat();
-                });
-
-                newSocket.on('connect_error', () => {
-                    clearTimeout(fallbackTimer);
-                    console.warn(`[Chat] Server ${index + 1} connect_error, trying next...`);
-                    newSocket.disconnect();
-                    tryNextServer(index + 1);
-                });
-
-                newSocket.on('disconnect', () => {
-                    if (activeServerUrl === serverUrl) {
-                        socketConnected = false;
-                        updateChatStatus(false);
-                    }
-                });
-            };
-
-            try { document.head.appendChild(s); }
-            catch (e) { tryNextServer(index + 1); }
-        }
-
-
-
-        function updateChatStatus(connected) {
-            const dot = document.getElementById('chatStatusDot');
-            const text = document.getElementById('chatStatusText');
-            if (dot && text) {
-                dot.style.background = connected ? '#4caf50' : '#f44336';
-                text.innerText = connected ? 'STUDIO CHAT LIVE ✓' : 'CHAT DISCONNECTED ✗';
-            }
-        }
-
-        function updateOnlineCount(count) {
-            const countEl = document.getElementById('onlineCount');
-            const adminCountEl = document.getElementById('adminOnlineCount');
-            if (countEl) countEl.innerText = count + ' ONLINE';
-            if (adminCountEl) adminCountEl.innerText = count;
-        }
-        // initSocket() moved to window.onload to ensure UI is ready
-    </script>
-
-    <style>
-        :root {
-            --accent-gold: #ffcf71;
-            --gold-gradient: linear-gradient(135deg, #ffcf71 0%, #d4af37 50%, #b8860b 100%);
-            --dark-bg: #050505;
-            --glass-white: rgba(255, 255, 255, 0.05);
-            --font-main: 'Inter', sans-serif;
-            --font-head: 'Outfit', sans-serif;
-        }
-
-        body {
-            overflow-x: hidden;
-            background-color: var(--dark-bg);
-            background: radial-gradient(circle at top right, #1a1a1a, #050505);
-            color: #fff;
-            font-family: var(--font-main);
-            margin: 0;
-        }
-
-        .portal-container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 20px;
-            display: grid;
-            grid-template-columns: 1fr 380px;
-            gap: 24px;
-            min-height: 100vh;
-            transition: padding-bottom 0.4s ease;
-        }
-
-        body.player-visible .portal-container {
-            padding-bottom: 100px;
-        }
-
-        @media (max-width: 1100px) {
-            .portal-container {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        /* --- THE STUDIO (Main Section) --- */
-        .live-studio {
-            display: flex;
-            flex-direction: column;
-            gap: 24px;
-        }
-
-        .hero-banner {
-            background: linear-gradient(135deg, rgba(255, 215, 0, 0.1), rgba(255, 0, 128, 0.1));
-            border-radius: 24px;
-            padding: 40px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            position: relative;
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .studio-visualizer {
-            width: 100%;
-            height: 450px;
-            background: #000;
-            border-radius: 20px;
-            position: relative;
-            overflow: hidden;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
-        }
-
-        /* --- CHAT HUB --- */
-        .chat-hub {
-            background: rgba(20, 20, 20, 0.8);
-            backdrop-filter: blur(20px);
-            border-radius: 24px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            display: flex;
-            flex-direction: column;
-            height: calc(100vh - 40px);
-            position: sticky;
-            top: 20px;
-            transition: height 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        }
-
-        body.player-visible .chat-hub {
-            height: calc(100vh - 130px);
-        }
-
-        .chat-header {
-            padding: 20px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .chat-messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .chat-input-area {
-            padding: 20px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-            display: flex;
-            gap: 10px;
-        }
-
-        .message {
-            background: rgba(255, 255, 255, 0.05);
-            padding: 12px 16px;
-            border-radius: 16px;
-            max-width: 85%;
-            animation: fadeIn 0.3s ease;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .message .user {
-            font-weight: bold;
-            color: var(--accent-gold);
-            font-size: 0.8rem;
-            margin-bottom: 4px;
-            display: block;
-        }
-
-        .message .time {
-            float: right;
-            font-size: 0.7rem;
-            color: #666;
-            margin-left: 10px;
-            margin-top: 4px;
-        }
-
-        /* --- PREMIUM ENHANCEMENTS --- */
-
-        @keyframes subtle-pulse {
-            0% {
-                transform: scale(1);
-                filter: brightness(1) drop-shadow(0 0 15px rgba(255, 215, 0, 0.1));
-            }
-
-            50% {
-                transform: scale(1.02);
-                filter: brightness(1.1) drop-shadow(0 0 25px rgba(255, 215, 0, 0.2));
-            }
-
-            100% {
-                transform: scale(1);
-                filter: brightness(1) drop-shadow(0 0 15px rgba(255, 215, 0, 0.1));
-            }
-        }
-
-        .pulse-logo {
-            animation: subtle-pulse 4s infinite ease-in-out;
-        }
-
-        .glass-card {
-            background: var(--glass-white);
-            backdrop-filter: blur(25px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 20px;
-            transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
-            box-shadow: inset 0 0 15px rgba(255, 255, 255, 0.02);
-            position: relative;
-            overflow: hidden;
-        }
-
-        .glass-card:hover {
-            transform: translateY(-8px);
-            border-color: rgba(255, 207, 113, 0.3);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), inset 0 0 20px rgba(255, 255, 255, 0.03);
-        }
-
-        .glass-btn {
-            background: var(--glass-white);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
-
-        .glass-btn:hover {
-            background: rgba(255, 255, 255, 0.1);
-            transform: scale(1.05);
-            border-color: var(--accent-gold);
-        }
-
-        h1,
-        h2,
-        h3,
-        h4 {
-            font-family: var(--font-head);
-            letter-spacing: -0.02em;
-            margin-top: 0;
-        }
-
-        p {
-            line-height: 1.6;
-            color: #aaa;
-        }
-
-        /* Launch Overlay */
-        .launch-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: #000;
-            z-index: 10000;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.8s cubic-bezier(0.19, 1, 0.22, 1);
-        }
-
-        .launch-overlay.hidden {
-            opacity: 0;
-            pointer-events: none;
-            transform: scale(1.1);
-        }
-
-        /* Floating Player Bar */
-        .floating-player {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            background: rgba(10, 10, 10, 0.95);
-            backdrop-filter: blur(20px);
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 12px 20px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            z-index: 9000;
-            transform: translateY(100%);
-            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        }
-
-        .floating-player.visible {
-            transform: translateY(0);
-        }
-
-        .mini-info {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .mini-logo {
-            width: 50px;
-            height: 50px;
-            border-radius: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            object-fit: cover;
-        }
-
-        .download-btn {
-            background: var(--gold-gradient);
-            color: black;
-            padding: 10px 22px;
-            border-radius: 30px;
-            text-decoration: none;
-            font-weight: 800;
-            font-size: 0.85rem;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            box-shadow: 0 4px 15px rgba(212, 175, 55, 0.3);
-            border: none;
-            cursor: pointer;
-            letter-spacing: 0.05em;
-        }
-
-        .download-btn:hover {
-            transform: translateY(-3px) scale(1.05);
-            box-shadow: 0 8px 25px rgba(212, 175, 55, 0.5);
-            color: black;
-        }
-    </style>
+    <title>Hello Machi FM | Premium Tamil Radio</title>
+    <meta name="description" content="Experience Premium Tamil Radio with Hello Machi FM. Listen live, participate in Super Singer, and more!">
+    <link rel="stylesheet" href="styles.css?v=2">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Outfit:wght@300;500;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-auth-compat.js"></script>
+    <script src="firebase-config.js"></script>
 </head>
-
-<body style="overflow-x: hidden;">
-
-    <!-- Launch Overlay -->
-    <div class="launch-overlay" id="launchOverlay">
-        <img src="./logo.jpg"
-            style="width: 150px; border-radius: 50%; box-shadow: 0 0 50px rgba(255,215,0,0.3); margin-bottom: 30px;">
-        <h1 style="font-family: 'Outfit'; color: var(--accent-gold); margin-bottom: 10px;">HELLO MACHI FM</h1>
-        <p style="color: #888; margin-bottom: 40px;">Experience Premium Tamil Radio</p>
-        <button id="enterStudio" class="glass-btn"
-            style="background: var(--gold-gradient); color: #000; font-weight: 800; border: none; padding: 15px 40px; border-radius: 40px; font-size: 1.1rem; cursor: pointer;">ENTER
-            STUDIO & LISTEN LIVE</button>
-    </div>
-
-    <!-- Floating Player Bar -->
-    <div class="floating-player" id="floatingPlayer">
-        <div class="mini-info">
-            <img src="./logo.jpg" class="mini-logo" id="miniLogo"
-                onerror="this.src='./logo.jpg'">
-            <div>
-                <div id="miniTitle"
-                    style="font-size: 0.9rem; font-weight: 700; color: var(--accent-gold); font-family: var(--font-head);">
-                    HELLO MACHI</div>
-                <div id="miniRj"
-                    style="font-size: 0.7rem; color: #888; text-transform: uppercase; letter-spacing: 1px;">LIVE NOW
-                </div>
+<body data-lightning-trigger="true">
+    <div class="lightning-bg-scene"></div>
+    
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="logo">
+                <img src="logo.jpg" alt="Hello Machi FM Logo">
+                <span class="logo-text">HELLO MACHI <span class="fm-tag">FM</span></span>
             </div>
-        </div>
-        <div style="display: flex; align-items: center; gap: 20px;">
-            <div id="miniPlayBtn" style="cursor: pointer; font-size: 1.5rem; color: #fff;">▶</div>
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <span>🔊</span>
-                <input type="range" id="miniVolume" min="0" max="1" step="0.01" value="0.5"
-                    style="width: 80px; accent-color: var(--accent-gold);">
-            </div>
-        </div>
-    </div>
-
-    <nav class="glass-nav"
-        style="position: sticky; top: 0; z-index: 1000; border-bottom: 1px solid rgba(255,255,255,0.08); background: rgba(5,5,5,0.9); backdrop-filter: blur(25px);">
-        <div
-            style="max-width: 1400px; margin: 0 auto; padding: 18px 20px; display: flex; justify-content: space-between; align-items: center;">
-            <div style="display: flex; align-items: center; gap: 15px;">
-                <img src="./logo.jpg" style="height: 64px; width: 64px; border-radius: 50%; object-fit: cover;" id="portalLogo"
-                    onerror="this.src='./logo.jpg'">
-                <h2
-                    style="font-family: var(--font-head); margin: 0; background: var(--gold-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-size: 1.5rem;">
-                    HELLO MACHI FM</h2>
-            </div>
-            <div style="display: flex; gap: 20px; align-items: center;">
-                <a href="#" style="color: #fff; text-decoration: none; font-weight: 600;">HOME</a>
-                <a href="#schedule" style="color: #aaa; text-decoration: none;">SCHEDULE</a>
-                <a href="#" id="apkDownloadHeader" class="download-btn" target="_blank" style="text-decoration: none; margin-left: 5px;">
-                    <span>GET THE APP</span>
-                    <span style="font-size: 1.1rem;">⬇</span>
-                </a>
-                <button id="settingsBtn" class="settings-btn"
-                    style="position: static; font-size: 1.2rem; background: none; border: none; cursor: pointer; padding: 5px;">⚙️</button>
-            </div>
+            <ul class="nav-links">
+                <li><a href="#home">Home</a></li>
+                <li><a href="#schedule">Schedule</a></li>
+            </ul>
+            <a id="nav-apk-link" href="hello-machi-v2.apk" download class="nav-apk-btn" title="Download Android App"><i class="fa-brands fa-android"></i></a>
         </div>
     </nav>
 
-    <div class="portal-container">
-        <!-- Main Studio Section -->
-        <div class="live-studio">
-
-            <div class="hero-banner">
-                <div>
-                    <span
-                        style="background: var(--accent-gold); color: #000; padding: 4px 12px; border-radius: 20px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase;">Streaming
-                        Live</span>
-                    <h1 id="onAirTitle"
-                        style="margin: 10px 0; font-family: var(--font-head); font-size: 3rem; letter-spacing: -0.03em;">
-                        LOADING STATION...</h1>
-                    <p id="onAirRj" style="color: #888; font-size: 1rem; margin: 0; font-weight: 500;">WITH RJ ...</p>
+    <div id="app-content">
+        <!-- Hero Section -->
+        <header id="home" class="hero">
+            <div class="hero-bg"></div>
+            <div class="hero-overlay"></div>
+            <div class="hero-content">
+                <div class="live-badge"><span class="pulse"></span> ON AIR NOW</div>
+                <h1 class="hero-title" id="hero-title">THE BEAT OF <br><span class="gradient-text">CHENNAI</span></h1>
+                <p class="hero-subtitle" id="hero-subtitle">Your exclusive destination for the finest Tamil hits.</p>
+                <div class="hero-actions">
+                    <button class="btn btn-primary btn-glow" id="play-hero-btn"><i class="fa-solid fa-play"></i> LISTEN LIVE</button>
+                    <a href="https://wa.me/919092363433" target="_blank" class="btn btn-secondary"><i class="fa-brands fa-whatsapp"></i> MESSAGE US</a>
                 </div>
-                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 15px;">
-                    <div style="display: flex; align-items: center; gap: 15px;">
-                        <div id="playBtnPortal" class="play-btn"
-                            style="position: static; width: 70px; height: 70px; font-size: 1.8rem;">▶</div>
-                        <div class="volume-control"
-                            style="display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.05); padding: 10px 20px; border-radius: 40px; border: 1px solid rgba(255,255,255,0.1);">
-                            <span style="font-size: 1.2rem;">🔊</span>
-                            <input type="range" id="portalVolume" min="0" max="1" step="0.01" value="0.5"
-                                style="width: 100px; accent-color: var(--accent-gold); cursor: pointer;">
+
+                <!-- Live Interactive Hub Card -->
+                <div class="interactive-hub-container" style="margin-top: 50px; display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 20px; width: 100%; max-width: 900px; text-align: left; perspective: 1000px;">
+                    
+                    <!-- Now Playing Live HUD -->
+                    <div class="glass-card" style="border-color: rgba(255, 215, 0, 0.08); box-shadow: 0 0 40px rgba(255, 215, 0, 0.03);">
+                        <div class="glass-card-label" style="color: #FFD700;"><i class="fa-solid fa-compact-disc fa-spin"></i> Now Playing</div>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <img id="hud-cover-art" src="logo.jpg" alt="Cover Art" style="width: 60px; height: 60px; border-radius: 12px; object-fit: cover; border: 1px solid rgba(255, 215, 0, 0.1);">
+                            <div style="display: flex; flex-direction: column; overflow: hidden; flex: 1;">
+                                <span id="hud-program-title" style="font-weight: 800; font-size: 1rem; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">LOADING SHOW...</span>
+                                <span id="hud-program-rj" style="font-size: 0.8rem; color: var(--primary); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">WITH MACHI TEAM</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Scrolling Song Marquee Box -->
+                        <div class="marquee-container" style="background: rgba(255, 215, 0, 0.03); border: 1px solid rgba(255, 215, 0, 0.08); border-radius: 10px; padding: 8px 10px; font-size: 0.8rem; overflow: hidden;">
+                            <div style="display: flex; align-items: center; gap: 8px; overflow: hidden; width: 100%;">
+                                <span class="pulse" style="width:5px; height:5px; background: #FFD700; border-radius: 50%; display: inline-block; flex-shrink: 0; box-shadow: 0 0 6px rgba(255, 215, 0, 0.4);"></span>
+                                <div class="marquee-scroll-container" style="overflow: hidden; white-space: nowrap; width: 100%;">
+                                    <span id="hud-track-marquee">
+                                        <span class="marquee-prefix">NOW PLAYING</span> HELLO MACHI FM — IDHU NAMMA AREA MACHI
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="background: rgba(255, 255, 255, 0.02); border-radius: 8px; padding: 6px 10px; font-size: 0.7rem; color: rgba(255, 255, 255, 0.4); display: flex; align-items: center; gap: 6px;">
+                            <span class="pulse" style="width:4px; height:4px;"></span> <span id="hud-status-text">Streaming high-quality stereo audio.</span>
                         </div>
                     </div>
-                    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 12px; width: 100%;">
-                        <button id="requestSongBtn" class="glass-btn"
-                            style="background: var(--gold-gradient); color: #000; font-weight: 800; border: none; padding: 12px 25px; border-radius: 30px; font-size: 0.9rem; letter-spacing: 1px; width: 100%;">🎵
-                            REQUEST A SONG</button>
-                        <a id="apkDownloadHero" class="glass-btn" href="#" target="_blank"
-                            style="background: rgba(255,255,255,0.05); color: var(--accent-gold); font-weight: 800; border: 1px solid var(--accent-gold); padding: 12px 25px; border-radius: 30px; font-size: 0.9rem; letter-spacing: 1px; width: 100%; text-decoration: none; text-align: center; display: flex; align-items: center; justify-content: center; gap: 10px;">
-                            <span style="font-size: 1.2rem;">🤖</span> DOWNLOAD ANDROID APK</a>
+
+                    <!-- Live Poll Widget -->
+                    <div id="home-poll-card" class="glass-card">
+                        <div class="glass-card-label" style="color: #FFD700;"><i class="fa-solid fa-square-poll-vertical"></i> Live Studio Poll</div>
+                        <div id="home-poll-container" style="flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 100px;">
+                            <div id="home-poll-empty" style="text-align: center; color: rgba(255,255,255,0.4); font-size: 0.85rem; line-height: 1.4;">
+                                No active poll at the moment. Stay tuned for the RJ's live updates!
+                            </div>
+                            <div id="home-poll-active" style="display: none; flex-direction: column; gap: 10px;">
+                                <h4 id="home-poll-question" style="font-size: 0.95rem; font-weight: 700; color: #fff; margin-bottom: 5px;">Question?</h4>
+                                <div id="home-poll-options" style="display: flex; flex-direction: column; gap: 8px;">
+                                    <!-- Options injected here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Direct Shoutout Sender -->
+                    <div class="glass-card">
+                        <div class="glass-card-label" style="color: #00E676;"><i class="fa-solid fa-paper-plane"></i> Request or Shoutout</div>
+                        <div style="display: flex; flex-direction: column; gap: 10px;">
+                            <input type="text" id="home-shoutout-nickname" placeholder="Your Nickname" class="glass-input" />
+                            <textarea id="home-shoutout-message" placeholder="Type song title or message to RJ..." rows="2" class="glass-input" style="resize: none;"></textarea>
+                            <button id="home-shoutout-send-btn" class="btn-shoutout-send">SEND LIVE TO RJ</button>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+        </header>
+
+        <!-- Shoutout Wall -->
+        <section class="shoutout-wall" style="padding: 40px 0; background: #080810;">
+            <div class="container" style="max-width: 800px; margin: 0 auto; padding: 0 20px;">
+                <div class="section-header" style="margin-bottom: 20px;">
+                    <h2>LISTENER <span class="gradient-text">SHOUTOUTS</span></h2>
+                    <p>Messages from our family.</p>
+                </div>
+                <div id="shoutout-wall-feed" style="display: flex; flex-direction: column; gap: 12px; max-height: 420px; overflow-y: auto; padding-right: 8px; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent;">
+                    <div style="text-align: center; color: rgba(255,255,255,0.3); padding: 20px;">Loading shoutouts...</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Schedule Section -->
+        <section id="schedule" class="schedule-section">
+            <div class="container">
+                <div class="section-header">
+                    <h2>LIVE <span class="gradient-text">SCHEDULE</span></h2>
+                    <p>Track your favorite shows with real-time IST timings.</p>
+                </div>
+                <div class="schedule-table" id="schedule-grid">
+                    <!-- Rows will be injected here with strict 3-column alignment -->
+                </div>
+            </div>
+        </section>
+
+        <!-- RJ Introduction Section -->
+        <section id="rjs" class="rj-intro-section" style="padding: 100px 0; background: #050508;">
+            <div class="container">
+                <div class="section-header">
+                    <h2>MEET YOUR <span class="gradient-text">RJS</span></h2>
+                    <p>The voices that keep Chennai vibrant.</p>
+                </div>
+                <div id="rj-intro-grid" class="rj-grid">
+                    <!-- Premium RJ Cards with full images -->
+                    <div class="rj-premium-card">
+                        <img src="logo.jpg" alt="RJ Malar">
+                        <div class="rj-overlay">
+                            <h3>RJ Malar</h3>
+                            <p>Morning Vibes</p>
+                        </div>
+                    </div>
+                    <div class="rj-premium-card">
+                        <img src="logo.jpg" alt="RJ Uthiran">
+                        <div class="rj-overlay">
+                            <h3>RJ Uthiran</h3>
+                            <p>Retro Hits</p>
+                        </div>
+                    </div>
+                    <div class="rj-premium-card">
+                        <img src="logo.jpg" alt="RJ Vijay">
+                        <div class="rj-overlay">
+                            <h3>RJ Vijay</h3>
+                            <p>Evening Express</p>
+                        </div>
                     </div>
                 </div>
             </div>
+        </section>
 
-            <div class="studio-visualizer" id="visualizerContainer">
-                <!-- Particles & Logo will go here -->
-                <canvas id="visualizerCanvas" style="width: 100%; height: 100%;"></canvas>
-                <div id="logoContainer"
-                    style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">
-                    <img src="./logo.jpg" id="bgLogo" class="bg-logo"
-                        style="width: 240px; aspect-ratio: 1/1; border-radius: 50%; object-fit: cover; opacity: 0; transition: opacity 1s ease; filter: none;"
-                        onerror="this.src='./logo.jpg'">
-                    <img src="./logo.jpg" id="mainLogo" class="pulse-logo"
-                        style="width: 200px; border-radius: 50%; transition: transform 0.05s ease-out;"
-                        onerror="this.src='./logo.jpg'">
+        <!-- App Download Banner -->
+        <section class="app-download-banner" style="padding: 70px 0; background: linear-gradient(135deg, #0a0a12 0%, #1a0a20 50%, #0a0a12 100%); position: relative; overflow: hidden;">
+            <div style="position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 100%, rgba(255, 20, 147, 0.08) 0%, transparent 60%); pointer-events: none;"></div>
+            <div class="container" style="display: flex; align-items: center; justify-content: space-between; gap: 40px; flex-wrap: wrap; position: relative; z-index: 1;">
+                <div style="flex: 1; min-width: 250px;">
+                    <h2 style="font-size: clamp(1.5rem, 3vw, 2.2rem); font-weight: 800; margin: 0 0 8px;">Take Us <span class="gradient-text">Everywhere</span></h2>
+                    <p style="color: rgba(255,255,255,0.5); font-size: 0.95rem; margin: 0;">Download the official Hello Machi FM app for uninterrupted Tamil hits.</p>
+                </div>
+                <div style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
+                    <a id="apk-download-link" href="#" target="_blank" class="btn btn-primary btn-glow" style="padding: 16px 40px; font-size: 1rem; text-decoration: none; gap: 12px;">
+                        <i class="fa-brands fa-android" style="font-size: 1.3rem;"></i> DOWNLOAD APK
+                    </a>
+                    <span id="apk-version" style="font-size: 0.85rem; color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.03); padding: 8px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">v1.0</span>
                 </div>
             </div>
+        </section>
 
-            <div id="schedule" class="glass-card" style="padding: 30px;">
-                <h3 style="font-family: 'Outfit'; margin-top: 0;">📅 Today's Lineup</h3>
-                <div id="portalScheduleList"
-                    style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px;">
-                    <!-- Populated by JS -->
+        <!-- Footer -->
+        <footer class="detailed-footer">
+            <div class="container footer-grid">
+                <div class="footer-brand">
+                    <img src="logo.jpg" alt="Logo" class="footer-logo">
+                    <h3>HELLO MACHI FM</h3>
+                    <p>Premium Tamil Radio broadcasting worldwide. Your exclusive destination for the finest Tamil hits.</p>
                 </div>
-            </div>
-
-            <div id="about" class="glass-card" style="padding: 40px; margin-top: 24px; text-align: center;">
-                <h2
-                    style="font-family: 'Outfit'; margin-top: 0; background: var(--gold-gradient); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; display: inline-block;">
-                    YOUR PREMIUM TAMIL STATION</h2>
-                <p style="color: #aaa; line-height: 1.8; max-width: 800px; margin: 20px auto;">
-                    Hello Machi FM is your digital companion for the best Tamil hits, retro classics, and live RJ shows.
-                    We bring the spirit of Chennai and the world together through music, fun, and community.
-                    Join the conversation in our live chat or reach out on WhatsApp to request your favorite tunes!
-                </p>
-                <div style="display: flex; gap: 20px; justify-content: center; margin-top: 30px;">
-                    <a href="https://www.facebook.com/hellomachifm" target="_blank" class="glass-btn" id="fbPortalLink"
-                        style="padding: 12px 24px; text-decoration: none; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; background: rgba(255,255,255,0.05);">FACEBOOK</a>
-                    <a href="https://www.instagram.com/hellomachifm" target="_blank" class="glass-btn" id="igPortalLink"
-                        style="padding: 12px 24px; text-decoration: none; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; background: rgba(255,255,255,0.05);">INSTAGRAM</a>
-                    <a href="https://www.youtube.com/@HelloMachiFM" target="_blank" class="glass-btn" id="ytPortalLink"
-                        style="padding: 12px 24px; text-decoration: none; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; background: rgba(255,255,255,0.05);">YOUTUBE</a>
+                <div class="footer-links-group">
+                    <h4>QUICK LINKS</h4>
+                    <ul class="footer-links">
+                        <li><a href="#home">Home</a></li>
+                        <li><a href="#schedule">Schedule</a></li>
+                        <li><a href="supersinger.html">Super Singer</a></li>
+                    </ul>
                 </div>
-            </div>
-
-            <footer
-                style="margin-top: 80px; padding: 60px 0; border-top: 1px solid rgba(255,255,255,0.05); text-align: center; color: #444; font-size: 0.85rem; background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.01));">
-                <p style="margin-bottom: 15px; color: #666;">&copy; 2026 HELLO MACHI FM | <a href="#"
-                        style="color: #888; text-decoration: none;">Privacy Policy</a>
-                    | <a href="#" style="color: #888; text-decoration: none;">Terms of Service</a></p>
-                <span
-                    style="display: block; letter-spacing: 4px; color: #333; font-weight: 800; font-family: var(--font-head);">PROUDLY
-                    TAMIL &bull; PROUDLY GLOBAL</span>
-                <p style="font-size: 0.65rem; color: #222; margin-top: 10px;">Version: March 2026 Stable (2026-03-08)</p>
-                <div style="margin-top: 15px;">
-                    <a id="footerCustomLink" href="#" target="_blank" style="display: none; color: var(--accent-gold); text-decoration: none; font-size: 0.8rem; border: 1px solid rgba(255,207,113,0.3); padding: 5px 12px; border-radius: 20px; transition: 0.3s;">Visit Official Site</a>
-                </div>
-            </footer>
-
-        </div>
-
-        <!-- Chat Hub Section -->
-        <div class="chat-hub">
-            <div class="chat-header">
-                <div>
-                    <h3 style="margin: 0; font-family: 'Outfit';">Community Chat</h3>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="color: #22c55e; font-size: 0.7rem; font-weight: bold;">● LIVE</span>
-                        <span id="onlineCount" style="color: #888; font-size: 0.7rem; font-weight: bold; background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px;">0 ONLINE</span>
+                <div class="footer-social-group">
+                    <h4>CONNECT WITH US</h4>
+                    <div class="social-icons">
+                        <a href="https://www.facebook.com/hellomachifm" target="_blank" class="social-icon"><i class="fa-brands fa-facebook-f"></i></a>
+                        <a href="https://www.instagram.com/hellomachifm" target="_blank" class="social-icon"><i class="fa-brands fa-instagram"></i></a>
+                        <a href="https://www.youtube.com/@hellomachifm" target="_blank" class="social-icon"><i class="fa-brands fa-youtube"></i></a>
+                        <a href="https://wa.me/919092363433" target="_blank" class="social-icon"><i class="fa-brands fa-whatsapp"></i></a>
                     </div>
                 </div>
-                <div style="display: flex; gap: 8px;">
-                    <input type="text" id="nicknameInput" placeholder="Name"
-                        style="width: 80px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 4px 8px; color: #fff; font-size: 0.8rem;">
+            </div>
+            <div class="footer-bottom">
+                <div class="container">
+                    <p>&copy; 2026 HELLO MACHI FM. ALL RIGHTS RESERVED.</p>
                 </div>
             </div>
-
-            <div class="chat-messages" id="chatMessages">
-                <!-- Messages populate here -->
-            </div>
-
-            <div class="chat-input-area">
-                <input type="text" id="chatInput" placeholder="Type a message..."
-                    style="flex: 1; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 12px; color: #fff;">
-                <button id="sendMessageBtn"
-                    style="background: var(--accent-gold); border: none; border-radius: 12px; padding: 0 20px; color: #000; font-weight: bold; cursor: pointer;">SEND</button>
-            </div>
-        </div>
+        </footer>
     </div>
 
-    <!-- Admin Modal -->
-    <div id="adminModal" class="admin-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Admin Config</h2>
-                <button id="closeModal" class="close-modal">&times;</button>
-            </div>
-            <div class="config-form" id="configForm">
-                <div id="admin-login-view">
-                    <div class="form-group">
-                        <label>Admin ID</label>
-                        <input type="text" id="admin-id" placeholder="Enter ID"
-                            onkeyup="if(event.key==='Enter') checkAdminLogin()">
-                    </div>
-                    <div class="form-group">
-                        <label>Password</label>
-                        <input type="password" id="admin-pass" placeholder="Enter Password"
-                            onkeyup="if(event.key==='Enter') checkAdminLogin()">
-                    </div>
-                    <button type="button" class="save-config-btn" onclick="checkAdminLogin()">LOGIN</button>
-                </div>
-                <div id="admin-settings-view" style="display: none;">
-                    <div class="dashboard-section">
-                        <h4 class="section-title">📡 Core Station Setup</h4>
-                        <div class="form-group">
-                            <label>Live Stream URL (Primary)</label>
-                            <input type="text" id="cfg-stream" placeholder="HTTPS Stream URL">
-                        </div>
-                        <div class="form-group">
-                            <label>Fallback Stream URL (Secondary)</label>
-                            <input type="text" id="cfg-stream-fallback" placeholder="Backup Stream URL">
-                        </div>
-                        <div class="form-group">
-                            <label>HLS Stream URL (Data Saver)</label>
-                            <input type="text" id="cfg-hls-url" placeholder="https://.../live.m3u8">
-                        </div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                            <div class="form-group">
-                                <label>Fallback Timeout (Min)</label>
-                                <input type="number" id="cfg-fallback-timeout" value="30" min="1">
-                            </div>
-                            <div class="form-group">
-                                <label>Stream Mode</label>
-                                <select id="cfg-stream-mode" style="width: 100%; padding: 12px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff;">
-                                    <option value="auto">Auto-Fallback</option>
-                                    <option value="primary">Primary Only</option>
-                                    <option value="fallback">Fallback Only</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label>Station Logo (URL)</label>
-                            <input type="text" id="cfg-logo" placeholder="Logo image URL">
-                        </div>
-                        <div class="form-group">
-                            <label>Station Name</label>
-                            <input type="text" id="cfg-title" placeholder="Station Title">
-                        </div>
-                        <div class="form-group">
-                            <label>Welcome Message</label>
-                            <input type="text" id="cfg-greeting" placeholder="e.g. WELCOME TO">
-                        </div>
-                    </div>
-                    <div class="dashboard-section">
-                        <h4 class="section-title">📱 Contact & Social</h4>
-                        <div class="form-group">
-                            <label>WhatsApp Number</label>
-                            <input type="text" id="cfg-wa-num" placeholder="+91 ...">
-                        </div>
-                        <div class="form-group">
-                            <label>Pre-filled WhatsApp Message</label>
-                            <input type="text" id="cfg-wa-msg">
-                        </div>
-                        <div class="form-group">
-                            <label>Facebook URL</label>
-                            <input type="text" id="cfg-fb-url" placeholder="https://facebook.com/...">
-                        </div>
-                        <div class="form-group">
-                            <label>YouTube URL</label>
-                            <input type="text" id="cfg-yt-url" placeholder="https://youtube.com/...">
-                        </div>
-                        <div class="form-group">
-                            <label>Instagram URL</label>
-                            <input type="text" id="cfg-ig-url" placeholder="https://instagram.com/...">
-                        </div>
-                        <div class="form-group">
-                            <label>Custom Studio Link</label>
-                            <input type="text" id="cfg-custom-url" placeholder="https://...">
-                        </div>
-                    </div>
-                    <div class="dashboard-section">
-                        <h4 class="section-title">🚀 Android App & Updates</h4>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                            <div class="form-group">
-                                <label>Latest Version Code</label>
-                                <input type="number" id="cfg-version-code" placeholder="e.g. 2">
-                            </div>
-                            <div class="form-group">
-                                <label>Accent Color (Hex)</label>
-                                <input type="text" id="cfg-accent-color" placeholder="#D4AF37">
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label>APK Download URL</label>
-                            <input type="text" id="cfg-apk-url" placeholder="https://github.com/.../app.apk">
-                        </div>
-                        <div class="form-group">
-                            <label>Update Message</label>
-                            <input type="text" id="cfg-update-msg" placeholder="New version available!">
-                        </div>
-                        <div class="form-group">
-                            <label>Request Song Message</label>
-                            <input type="text" id="cfg-request-msg" placeholder="I'd like to request a song...">
-                        </div>
-                        <div class="form-group">
-                            <label>Player Status Message</label>
-                            <input type="text" id="cfg-status-msg" placeholder="Synced via Cloud Panel">
-                        </div>
-                    </div>
-                    <div class="dashboard-section">
-                        <h4 class="section-title">📢 Global Announcements (Popups)</h4>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                            <div class="form-group">
-                                <label>Popup ID (Change this to show a new popup)</label>
-                                <input type="text" id="cfg-popup-id" placeholder="e.g. event_001">
-                            </div>
-                            <div class="form-group">
-                                <label>Popup Title</label>
-                                <input type="text" id="cfg-popup-title" placeholder="Announcement Title">
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label>Popup Message (Supports links)</label>
-                            <textarea id="cfg-popup-msg" style="width: 100%; height: 80px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: #fff; padding: 10px;" placeholder="Enter message here..."></textarea>
-                        </div>
-                        <div class="form-group">
-                            <label>Popup Image URL (Optional header image)</label>
-                            <input type="text" id="cfg-popup-img" placeholder="https://.../banner.jpg">
-                        </div>
-                        <div class="form-group">
-                            <label>Popup Target URL (Optional 'Learn More' link)</label>
-                            <input type="text" id="cfg-popup-url" placeholder="https://...">
-                        </div>
-                    </div>
-                    <div class="dashboard-section">
-                        <h4 class="section-title">⏰ Program Schedule</h4>
-                        <div id="programEditList"></div>
-                        <button type="button" class="add-btn" onclick="addProgramRow()"
-                            style="width: 100%; margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.3); border: 1px dashed #555; color: #fff; border-radius: 8px;">+
-                            ADD SHOW</button>
-                    </div>
-                    <button type="button" class="save-config-btn" onclick="applyRemoteUpdate()"
-                        style="margin-top: 20px;">SAVE &amp; SYNC</button>
+    <!-- Tap to Play Overlay (For Mobile Autoplay bypass) -->
+    <div id="tap-to-play-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:9999; flex-direction:column; align-items:center; justify-content:center; backdrop-filter:blur(10px); cursor:pointer;">
+        <div style="background:var(--primary); width:80px; height:80px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin-bottom:20px; box-shadow:0 0 30px var(--primary);">
+            <i class="fa-solid fa-play" style="color:black; font-size:2rem;"></i>
+        </div>
+        <h2 style="color:white; font-family:'Outfit', sans-serif;">TAP TO LISTEN LIVE</h2>
+        <p style="color:rgba(255,255,255,0.6);">Mobile browsers require a tap to start the music</p>
+    </div>
 
-                    <!-- Admin Chat Controls -->
-                    <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.1);">
-                        <div
-                            style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                            <p
-                                style="margin: 0; color:#888; font-size:0.8rem; text-transform:uppercase; letter-spacing:1px;">
-                                💬 Chat Management</p>
-                            <div style="display: flex; align-items: center; gap: 12px;">
-                                <div style="display: flex; align-items: center; gap: 6px;">
-                                    <span style="font-size: 0.65rem; color: #888;">Online: </span>
-                                    <span id="adminOnlineCount" style="font-size: 0.7rem; font-weight: bold; color: var(--accent-gold);">0</span>
-                                </div>
-                                <div style="display: flex; align-items: center; gap: 6px;">
-                                    <div id="chatStatusDot"
-                                        style="width: 8px; height: 8px; border-radius: 50%; background: #f44336;"></div>
-                                    <span id="chatStatusText"
-                                        style="font-size: 0.65rem; font-weight: bold; color: #777;">DISCONNECTED</span>
-                                </div>
-                            </div>
-                        </div>
-                        <button type="button" onclick="adminClearChat()"
-                            style="width:100%; padding:12px; background:rgba(255,60,60,0.12); border:1px solid rgba(255,60,60,0.35); border-radius:10px; color:#ff6b6b; font-weight:bold; font-size:0.9rem; cursor:pointer;">
-                            🗑 Clear All Chat Messages
-                        </button>
-                        <p style="margin:6px 0 0; color:#555; font-size:0.72rem; text-align:center;">Permanently deletes
-                            all messages for all users.</p>
+    <!-- Retro Block Player -->
+    <div class="floating-player-wrapper">
+        <div class="floating-player">
+            <!-- Left: Disk -->
+            <div class="disk-control-wrapper">
+                <button id="play-pause-btn" class="disk-button">
+                    <img src="logo.jpg" alt="Disk" id="player-disk-img" class="disk-img">
+                    <div class="disk-inner-play">
+                        <i class="fa-solid fa-play" id="play-icon"></i>
                     </div>
+                </button>
+                <!-- Cinematic Tonearm (Needle) -->
+                <div class="tonearm"></div>
+            </div>
+            
+            <!-- Middle: Retro Visualizer -->
+            <div class="retro-visualizer">
+                <div class="vis-block-col">
+                    <div class="vis-block"></div><div class="vis-block"></div><div class="vis-block"></div><div class="vis-block"></div><div class="vis-block"></div><div class="vis-block"></div><div class="vis-block"></div>
+                </div>
+                <div class="vis-block-col">
+                    <div class="vis-block"></div><div class="vis-block"></div><div class="vis-block"></div><div class="vis-block"></div><div class="vis-block"></div><div class="vis-block"></div><div class="vis-block"></div>
+                </div>
+                <div class="vis-block-col">
+                    <div class="vis-block"></div><div class="vis-block"></div><div class="vis-block"></div><div class="vis-block"></div><div class="vis-block"></div><div class="vis-block"></div><div class="vis-block"></div>
+                </div>
+                <div class="vis-block-col">
+                    <div class="vis-block"></div><div class="vis-block"></div><div class="vis-block"></div><div class="vis-block"></div><div class="vis-block"></div><div class="vis-block"></div><div class="vis-block"></div>
+                </div>
+            </div>
+
+            <!-- Right: Controls -->
+            <div class="player-controls-right">
+                <h4 id="now-playing-title">HELLO MACHI FM</h4>
+                <div class="volume-group">
+                    <i class="fa-solid fa-volume-high" style="color:#666; font-size:0.7rem;"></i>
+                    <input type="range" id="volume-slider" class="volume-slider" min="0" max="1" step="0.01" value="0.8">
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Hidden Audio Player -->
-    <audio id="radioAudio"></audio>
+    <audio id="azuracast-player" preload="none">
+        <source src="https://hellomachifm.duckdns.org/listen/hello_machi_fm/radio.mp3" type="audio/mpeg">
+    </audio>
 
+    <!-- Live Chat Widget -->
+    <div id="chat-widget-container" style="position:fixed; bottom:110px; right:20px; z-index:10001;">
+        <button id="chat-toggle-btn" style="background:var(--secondary); color:white; border:none; width:60px; height:60px; border-radius:50%; cursor:pointer; box-shadow:0 10px 30px rgba(0,0,0,0.5); font-size:1.5rem; display:flex; align-items:center; justify-content:center;">
+            <i class="fa-solid fa-comments"></i>
+        </button>
+        <div id="chat-window" style="display:none; position:absolute; bottom:80px; right:0; width:350px; height:500px; background:var(--bg-card); border:1px solid var(--glass-border); border-radius:20px; flex-direction:column; overflow:hidden; box-shadow:0 20px 50px rgba(0,0,0,0.8);">
+            <div style="background:var(--secondary); padding:15px; color:white; display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; flex-direction:column;">
+                    <strong><i class="fa-solid fa-tower-broadcast"></i> Live Chat</strong>
+                    <small id="onlineCount" style="font-size:0.6rem; opacity:0.8;"><span class="pulse"></span> 0 Listeners Online</small>
+                    <span id="chatOnlineCount" style="display:none;">0</span>
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button onclick="setChatName()" style="background:rgba(255,255,255,0.1); border:none; color:white; padding:5px 10px; border-radius:5px; font-size:0.7rem; cursor:pointer;"><i class="fa-solid fa-user-edit"></i> Name</button>
+                    <button onclick="toggleChat()" style="background:none; border:none; color:white; cursor:pointer;"><i class="fa-solid fa-times"></i></button>
+                </div>
+            </div>
+            <div id="chat-messages" style="flex:1; padding:15px; overflow-y:auto; display:flex; flex-direction:column; gap:10px;">
+                <!-- Messages injected here -->
+            </div>
+            <div style="padding:15px; border-top:1px solid rgba(255,255,255,0.1); display:flex; gap:10px;">
+                <input type="text" id="chat-input" placeholder="Type a message..." style="flex:1; background:rgba(255,255,255,0.05); border:1px solid #444; color:white; padding:10px; border-radius:10px; outline:none;">
+                <button id="chat-send-btn" style="background:var(--primary); border:none; color:black; padding:10px 15px; border-radius:10px; cursor:pointer;"><i class="fa-solid fa-paper-plane"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="script.js"></script>
     <script>
-        // socket is already initialised above via graceful loader
-        const chatMessages = document.getElementById('chatMessages');
+        // Secret Triple-Tap for Admin Access (Ultra-Robust)
+        const trigger = document.querySelector('.logo'); // Target the whole logo area
+        let clicks = 0;
+        let lastClick = 0;
 
-        const chatInput = document.getElementById('chatInput');
-        const sendBtn = document.getElementById('sendMessageBtn');
-        const audio = document.getElementById('radioAudio');
-        const playBtn = document.getElementById('playBtnPortal');
-        const miniPlayBtn = document.getElementById('miniPlayBtn');
-        const nickInput = document.getElementById('nicknameInput');
-        const volSlider = document.getElementById('portalVolume');
-        const miniVolSlider = document.getElementById('miniVolume');
-        const requestBtn = document.getElementById('requestSongBtn');
-        const launchOverlay = document.getElementById('launchOverlay');
-        const enterBtn = document.getElementById('enterStudio');
-        const floatingPlayer = document.getElementById('floatingPlayer');
-
-        let userName = localStorage.getItem('machi-nickname') || 'Listener_' + Math.floor(Math.random() * 9000 + 1000);
-        nickInput.value = userName;
-
-        // Handle Launch & Autoplay
-        enterBtn.onclick = () => {
-            launchOverlay.classList.add('hidden');
-            setTimeout(() => {
-                launchOverlay.style.display = 'none';
-                document.getElementById('settingsBtn').classList.add('visible'); // Show gear ⚙️
-            }, 800);
-            if (!isPlaying) triggerPlay(); // Start playing immediately
-            updateMediaSession();
-        };
-
-        function getCurrentProgram() {
-            if (!config || !config.programs) return null;
-            const now = new Date();
-            const timeVal = now.getHours() * 100 + now.getMinutes();
-            let current = config.programs[0];
-            for (let p of config.programs) {
-                const parts = p.time.split(':');
-                const startVal = parseInt(parts[0]) * 100 + parseInt(parts[1]);
-                const endParts = (p.endTime || "23:59").split(':');
-                const endVal = parseInt(endParts[0]) * 100 + parseInt(endParts[1]);
-                if (timeVal >= startVal && timeVal < endVal) {
-                    current = p;
-                    break;
+        if (trigger) {
+            trigger.style.cursor = 'pointer';
+            // Use 'mousedown' for desktop and 'touchstart' for mobile to be instant
+            const handleSecretClick = (e) => {
+                const now = Date.now();
+                if (now - lastClick < 600) { 
+                    clicks++;
+                } else {
+                    clicks = 1;
                 }
-            }
-            return current;
-        }
+                lastClick = now;
 
-        function updateMediaSession() {
-            if ('mediaSession' in navigator) {
-                const prog = getCurrentProgram();
-                navigator.mediaSession.metadata = new MediaMetadata({
-                    title: prog ? prog.title : (config.welcome_title || 'Hello Machi FM'),
-                    artist: prog ? `Live with ${prog.rj}` : (config.welcome_greeting || 'Live Radio'),
-                    album: 'Live Studio Portal',
-                    artwork: [
-                        { src: './Logo.jpg', sizes: '512x512', type: 'image/jpeg' }
-                    ]
-                });
-
-                navigator.mediaSession.setActionHandler('play', triggerPlay);
-                navigator.mediaSession.setActionHandler('pause', triggerPlay);
-            }
-        }
-
-        // Sync Volume Sliders
-        audio.volume = 0.5;
-        volSlider.oninput = (e) => {
-            audio.volume = e.target.value;
-            miniVolSlider.value = e.target.value;
-        };
-        miniVolSlider.oninput = (e) => {
-            audio.volume = e.target.value;
-            volSlider.value = e.target.value;
-        };
-
-        // Handle Request
-        requestBtn.onclick = () => {
-            const num = (config && config.whatsapp_number) || "+91 9092363433";
-            const cleanNum = num.replace(/\D/g, '');
-            const msg = encodeURIComponent(`Hello Machi FM! I am ${userName} and I have a song request: `);
-            window.open(`https://api.whatsapp.com/send?phone=${cleanNum}&text=${msg}`, '_blank');
-        };
-
-        // Scroll Tracking for Floating Player
-        window.onscroll = () => {
-            const studioBottom = document.querySelector('.hero-banner').getBoundingClientRect().bottom;
-            if (studioBottom < 0) {
-                floatingPlayer.classList.add('visible');
-                document.body.classList.add('player-visible');
-            } else {
-                floatingPlayer.classList.remove('visible');
-                document.body.classList.remove('player-visible');
-            }
-        };
-
-        let fallbackActive = false;
-        let stallTimeout = null;
-
-        function getActiveStreamUrl() {
-            const mode = config.stream_mode || 'auto';
-            if (mode === 'primary') return config.stream_url || defaultConfig.stream_url;
-            if (mode === 'fallback') return config.fallback_stream_url || config.stream_url;
-            
-            // Auto mode
-            return fallbackActive ? (config.fallback_stream_url || config.stream_url) : (config.stream_url || defaultConfig.stream_url);
-        }
-
-        function startFallbackMonitor() {
-            if (stallTimeout) clearTimeout(stallTimeout);
-            fallbackActive = false; // Reset on every play start
-
-            audio.addEventListener('waiting', handleAudioStall);
-            audio.addEventListener('stalled', handleAudioStall);
-            audio.addEventListener('error', handleAudioStall);
-        }
-
-        function handleAudioStall() {
-            if (stallTimeout || fallbackActive) return;
-            const timeoutMin = config.fallback_timeout || 30;
-            const mode = config.stream_mode || 'auto';
-            
-            if (mode !== 'auto' || !config.fallback_stream_url) return;
-
-            console.log(`[Audio] Potential stall detected. Waiting ${timeoutMin} min for fallback...`);
-            stallTimeout = setTimeout(() => {
-                if (isPlaying && (audio.paused || audio.readyState < 3)) {
-                    console.warn(`[Audio] Switching to FALLBACK stream after ${timeoutMin} min stall.`);
-                    fallbackActive = true;
-                    const fallbackUrl = config.fallback_stream_url;
-                    audio.src = fallbackUrl;
-                    audio.load();
-                    audio.play().catch(e => console.error("[Audio] Fallback playback failed:", e));
+                if (clicks === 3) {
+                    window.location.href = 'admin.html';
+                    clicks = 0;
                 }
-                stallTimeout = null;
-            }, timeoutMin * 60 * 1000);
-        }
-
-        // --- COMMON PLAY TRIGGER ---
-        function triggerPlay() {
-            if (!isPlaying) {
-                try {
-                    audio.crossOrigin = "anonymous";
-                    initVisualizer();
-                    if (audioContext && audioContext.state === 'suspended') audioContext.resume();
-
-                    const targetStream = getActiveStreamUrl();
-                    audio.src = targetStream;
-                    audio.load();
-
-                    audio.play().then(() => {
-                        console.log("[Audio] System Active ✓");
-                        isPlaying = true;
-                        playBtn.innerText = '⏸';
-                        miniPlayBtn.innerText = '⏸';
-                        smoothBass = 0;
-                        draw();
-                        startFallbackMonitor();
-                    }).catch(err => {
-                        console.error("[Audio] Play Error:", err);
-                        // Fallback retry
-                        audio.removeAttribute('crossOrigin');
-                        audio.load();
-                        audio.play();
-                        isPlaying = true;
-                        playBtn.innerText = '⏸';
-                        miniPlayBtn.innerText = '⏸';
-                    });
-                } catch (e) { console.error("[Audio] Init Error:", e); }
-            } else {
-                audio.pause();
-                isPlaying = false;
-                playBtn.innerText = '▶';
-                miniPlayBtn.innerText = '▶';
-                if (animationId) cancelAnimationFrame(animationId);
-            }
-        }
-
-        playBtn.onclick = triggerPlay;
-        miniPlayBtn.onclick = triggerPlay;
-        nickInput.value = userName;
-
-        nickInput.onchange = () => {
-            if (nickInput.value.trim()) {
-                userName = nickInput.value.trim();
-                localStorage.setItem('machi-nickname', userName);
-            }
-        };
-
-        // --- CHAT LOGIC ---
-        let listenersAttached = false;
-        function setupChat() {
-            if (!socket || !socket.on || listenersAttached) return;
-            console.log('[Chat] Setting up listeners...');
-            listenersAttached = true;
-
-            socket.on('chat_history', (history) => {
-                console.log('[Chat] History received:', history.length);
-                const chatBox = document.getElementById('chatMessages');
-                if (chatBox) {
-                    chatBox.innerHTML = '';
-                    history.forEach(appendMessage);
-                    chatBox.scrollTop = chatBox.scrollHeight;
-                }
-            });
-
-            socket.on('new_message', (msg) => {
-                console.log('[Chat] Incoming:', msg.text);
-                appendMessage(msg);
-                const chatBox = document.getElementById('chatMessages');
-                if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
-            });
-
-            socket.on('chat_cleared', (data) => {
-                const chatBox = document.getElementById('chatMessages');
-                if (chatBox) {
-                    chatBox.innerHTML = `<div class="system-msg" style="text-align:center; color:#888; font-size:0.8rem; padding:20px;">🗑 Chat was cleared by ${data.adminUser}</div>`;
-                }
-            });
-
-            socket.on('user_count', (count) => {
-                console.log(`[Chat] Incoming User Count: ${count}`);
-                updateOnlineCount(count);
-            });
-        }
-
-        function appendMessage(msg) {
-            const div = document.createElement('div');
-            div.className = 'message';
-            div.innerHTML = `
-                <span class="user">${msg.user}</span>
-                <span class="text">${msg.text}</span>
-                <span class="time">${msg.time}</span>
-            `;
-            chatMessages.appendChild(div);
-        }
-
-        sendBtn.onclick = () => {
-            const text = chatInput.value.trim();
-            if (text) {
-                console.log('[Chat] Sending:', text);
-                socket.emit('send_message', { user: userName, text: text });
-                chatInput.value = '';
-            }
-        };
-
-        chatInput.onkeyup = (e) => { if (e.key === 'Enter') sendBtn.click(); };
-
-        // Initial setup in case socket connected before this script ran
-        if (socket.connected) setupChat();
-
-        // ============================================================
-        // SERVER LIST FOR CONFIG API (same as socket list above)
-        // ============================================================
-        let config = {};
-        const defaultConfig = {
-            "stream_url": "https://sonic-ca.instainternet.com/8022/stream",
-            "fallback_stream_url": "",
-            "fallback_timeout": 30,
-            "stream_mode": "auto",
-            "logo_url": "./logo.jpg",
-            "programs": [{ "time": "00:00", "endTime": "23:59", "title": "Hello Machi Live", "rj": "Machi Team" }]
-        };
-
-        async function loadConfig() {
-            // Try each server in order until one responds with config
-            const configServers = IS_LOCAL
-                ? ['http://localhost:3000']
-                : SERVER_LIST;
-            for (const srv of configServers) {
-                try {
-                    const res = await fetch(srv + '/config', { signal: AbortSignal.timeout(5000) });
-                    if (res.ok) {
-                        const remoteConfig = await res.json();
-                        config = { ...defaultConfig, ...remoteConfig };
-                        activeServerUrl = activeServerUrl || srv; // Cache working server
-                        applyConfig();
-                        return; // Success — stop trying
-                    }
-                } catch (e) {
-                    console.warn(`[Config] Server ${srv} failed, trying next...`);
-                }
-            }
-            // All servers failed — use localStorage or defaults
-            const local = JSON.parse(localStorage.getItem('hello-machi-remote-config'));
-            config = local ? { ...defaultConfig, ...local } : defaultConfig;
-            applyConfig();
-        }
-
-        function applyConfig() {
-            document.getElementById('portalLogo').src = config.logo_url;
-            document.getElementById('mainLogo').src = config.logo_url;
-            document.getElementById('miniLogo').src = config.logo_url;
-
-            // Apply custom theme color if present
-            if (config.accent_color) {
-                document.documentElement.style.setProperty('--accent-gold', config.accent_color);
-                const r = parseInt(config.accent_color.slice(1, 3), 16);
-                const g = parseInt(config.accent_color.slice(3, 5), 16);
-                const b = parseInt(config.accent_color.slice(5, 7), 16);
-                document.documentElement.style.setProperty('--gold-gradient', 
-                    `linear-gradient(135deg, ${config.accent_color} 0%, rgba(${Math.max(0,r-30)}, ${Math.max(0,g-30)}, ${Math.max(0,b-30)}, 1) 100%)`);
-            }
-
-            // Sync APK Download Link
-            if (config.apk_url) {
-                document.getElementById('apkDownloadHeader').href = config.apk_url;
-                document.getElementById('apkDownloadHero').href = config.apk_url;
-            }
-
-            if (config.facebook_url) document.getElementById('fbPortalLink').href = config.facebook_url;
-            if (config.youtube_url) document.getElementById('ytPortalLink').href = config.youtube_url;
-            if (config.instagram_url) document.getElementById('igPortalLink').href = config.instagram_url;
-            if (config.custom_link) {
-                const footerLink = document.getElementById('footerCustomLink');
-                if (footerLink) {
-                    footerLink.href = config.custom_link;
-                    footerLink.style.display = 'inline-block';
-                }
-            }
-
-            renderSchedule();
-            updateNowPlaying();
-            updateMediaSession();
-        }
-
-        function renderSchedule() {
-            const list = document.getElementById('portalScheduleList');
-            list.innerHTML = config.programs.map(p => `
-                <div class="glass-card" style="padding: 15px; border-radius: 15px; background: rgba(255,255,255,0.02);">
-                    <div style="font-weight: bold; color: var(--accent-gold); margin-bottom: 5px;">${p.time} - ${p.endTime}</div>
-                    <div style="font-weight: 600;">${p.title}</div>
-                    <div style="font-size: 0.8rem; color: #888;">with ${p.rj}</div>
-                </div>
-            `).join('');
-        }
-
-        function updateNowPlaying() {
-            const now = new Date();
-            const timeVal = now.getHours() * 100 + now.getMinutes();
-            let current = config.programs[0];
-
-            for (let p of config.programs) {
-                const [h, m] = p.time.split(':').map(Number);
-                const [eh, em] = (p.endTime || "23:59").split(':').map(Number);
-                if (timeVal >= (h * 100 + m) && timeVal < (eh * 100 + em)) {
-                    current = p;
-                    break;
-                }
-            }
-
-            document.getElementById('onAirTitle').innerText = current.title;
-            document.getElementById('onAirRj').innerText = `WITH ${current.rj}`;
-            document.getElementById('miniTitle').innerText = current.title;
-            document.getElementById('miniRj').innerText = `WITH ${current.rj}`;
-            updateMediaSession();
-        }
-
-        // --- AUDIO & VISUALIZER ---
-        let audioContext, analyzer, dataArray, animationId, isPlaying = false;
-        let smoothBass = 0; // Persistent physics state
-        let vizIntensity = 0; // Playback fade state
-        const canvas = document.getElementById('visualizerCanvas');
-        const ctx = canvas.getContext('2d');
-        const mainLogo = document.getElementById('mainLogo');
-
-        function initVisualizer() {
-            if (audioContext) return;
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const source = audioContext.createMediaElementSource(audio);
-            analyzer = audioContext.createAnalyser();
-            analyzer.fftSize = 256;
-            source.connect(analyzer);
-            analyzer.connect(audioContext.destination);
-            dataArray = new Uint8Array(analyzer.frequencyBinCount);
-
-            canvas.width = canvas.offsetWidth;
-            canvas.height = canvas.offsetHeight;
-
-            audio.addEventListener('error', (e) => {
-                console.error("Audio Error:", audio.error);
-                alert("Station offline or stream error. Please try again later.");
-            });
-        }
-
-        function draw() {
-            animationId = requestAnimationFrame(draw);
-            analyzer.getByteFrequencyData(dataArray);
-
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Golden Sync Integration (Standardized Multipliers)
-            let bass = 0;
-            for (let i = 0; i < 12; i++) bass += dataArray[i];
-            bass = bass / 12;
-
-            const rawNorm = (bass / 255);
-            smoothBass = Math.max(rawNorm, smoothBass * 0.88);
-            const punchyEnergy = Math.pow(smoothBass, 1.3);
-
-            const scale = 1 + punchyEnergy * 0.65; // Golden Multiplier
-            mainLogo.style.transform = `scale(${scale})`;
-
-            // Background Logo: CRISP DANCE (No Blur)
-            const bgLogo = document.getElementById('bgLogo');
-            if (bgLogo) {
-                vizIntensity = Math.max(0, Math.min(1, isPlaying ? vizIntensity + 0.05 : vizIntensity - 0.05));
-                bgLogo.style.opacity = 0.85 * vizIntensity;
-                bgLogo.style.transform = `translate(-50%, -50%) scale(${1 + punchyEnergy * 0.25})`;
-                // Blur explicitly removed for crisp portal feel
-                bgLogo.style.filter = 'none';
-            }
-
-            // Draw circular visualizer
-            const barCount = analyzer.frequencyBinCount;
-            const radius = 120 * scale;
-            const centerX = canvas.width / 2;
-            const centerY = canvas.height / 2;
-
-            for (let i = 0; i < barCount; i++) {
-                const barHeight = (dataArray[i] / 255) * 80;
-                const angle = (i / barCount) * Math.PI * 2;
-                const x1 = centerX + Math.cos(angle) * radius;
-                const y1 = centerY + Math.sin(angle) * radius;
-                const x2 = centerX + Math.cos(angle) * (radius + barHeight);
-                const y2 = centerY + Math.sin(angle) * (radius + barHeight);
-
-                ctx.strokeStyle = `hsla(${200 + i}, 80%, 60%, 0.8)`;
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.moveTo(x1, y1);
-                ctx.lineTo(x2, y2);
-                ctx.stroke();
-            }
-        }
-
-        // Removed duplicate playBtn.onclick — triggerPlay() above is the canonical handler
-
-        window.onload = () => {
-            loadConfig();
-            initSocket();
-        };
-
-        // --- ADMIN UI LOGIC ---
-        const settingsBtn = document.getElementById('settingsBtn');
-        const adminModal = document.getElementById('adminModal');
-        const closeModal = document.getElementById('closeModal');
-        const programEditList = document.getElementById('programEditList');
-
-        settingsBtn.onclick = () => {
-            document.getElementById('admin-login-view').style.display = 'block';
-            document.getElementById('admin-settings-view').style.display = 'none';
-            adminModal.style.display = 'flex';
-        };
-
-        closeModal.onclick = () => adminModal.style.display = 'none';
-
-        function checkAdminLogin() {
-            const id = document.getElementById('admin-id').value;
-            const pass = document.getElementById('admin-pass').value;
-            if (id === 'admin' && pass === 'hellomachi@2025') {
-                document.getElementById('cfg-stream').value = config.stream_url;
-                document.getElementById('cfg-logo').value = config.logo_url;
-                document.getElementById('cfg-title').value = config.welcome_title || '';
-                document.getElementById('cfg-greeting').value = config.welcome_greeting || '';
-                document.getElementById('cfg-wa-num').value = config.whatsapp_number;
-                document.getElementById('cfg-wa-msg').value = config.whatsapp_message;
-                document.getElementById('cfg-fb-url').value = config.facebook_url || '';
-                document.getElementById('cfg-yt-url').value = config.youtube_url || '';
-                document.getElementById('cfg-ig-url').value = config.instagram_url || '';
-                document.getElementById('cfg-custom-url').value = config.custom_link || '';
-                document.getElementById('cfg-stream-fallback').value = config.fallback_stream_url || '';
-                document.getElementById('cfg-hls-url').value = config.hls_stream_url || '';
-                document.getElementById('cfg-fallback-timeout').value = config.fallback_timeout || 30;
-                document.getElementById('cfg-stream-mode').value = config.stream_mode || 'auto';
-                
-                // Android specific fields
-                document.getElementById('cfg-version-code').value = config.latest_version_code || 1;
-                document.getElementById('cfg-accent-color').value = config.accent_color || '#D4AF37';
-                document.getElementById('cfg-apk-url').value = config.apk_url || '';
-                document.getElementById('cfg-update-msg').value = config.update_message || '';
-                document.getElementById('cfg-request-msg').value = config.request_song_message || '';
-                document.getElementById('cfg-status-msg').value = config.status_message || '';
-                
-                // Announcements
-                document.getElementById('cfg-popup-id').value = config.popup_id || '';
-                document.getElementById('cfg-popup-title').value = config.popup_title || '';
-                document.getElementById('cfg-popup-msg').value = config.popup_message || '';
-                document.getElementById('cfg-popup-img').value = config.popup_image_url || '';
-                document.getElementById('cfg-popup-url').value = config.popup_url || '';
-
-                renderProgramEditList();
-                document.getElementById('admin-login-view').style.display = 'none';
-                document.getElementById('admin-settings-view').style.display = 'block';
-            } else {
-                alert("Invalid Credentials!");
-            }
-        }
-
-        function renderProgramEditList() {
-            programEditList.innerHTML = '';
-            config.programs.forEach((p, index) => {
-                const div = document.createElement('div');
-                div.className = 'program-edit-item';
-                div.innerHTML = `
-                    <input type="text" value="${p.time}" style="width:60px;">
-                    <input type="text" value="${p.endTime || ''}" style="width:60px;">
-                    <input type="text" value="${p.title}" style="flex:1;">
-                    <input type="text" value="${p.rj}" style="width:80px;">
-                    <button type="button" class="del-btn" onclick="removeProgramRow(${index})">&times;</button>
-                `;
-                programEditList.appendChild(div);
-            });
-        }
-
-        function addProgramRow() {
-            const div = document.createElement('div');
-            div.className = 'program-edit-item';
-            div.innerHTML = `
-                <input type="text" placeholder="00:00" style="width:60px;">
-                <input type="text" placeholder="00:00" style="width:60px;">
-                <input type="text" placeholder="Title" style="flex:1;">
-                <input type="text" placeholder="RJ Name" style="width:80px;">
-                <button type="button" class="del-btn" onclick="this.parentElement.remove()">&times;</button>
-            `;
-            programEditList.appendChild(div);
-        }
-
-        function removeProgramRow(index) {
-            config.programs.splice(index, 1);
-            renderProgramEditList();
-        }
-
-        function applyRemoteUpdate() {
-            const newConfig = {
-                ...config,
-                "stream_url": document.getElementById('cfg-stream').value,
-                "whatsapp_number": document.getElementById('cfg-wa-num').value,
-                "whatsapp_message": document.getElementById('cfg-wa-msg').value,
-                "logo_url": document.getElementById('cfg-logo').value,
-                "welcome_title": document.getElementById('cfg-title').value,
-                "welcome_greeting": document.getElementById('cfg-greeting').value,
-                "facebook_url": document.getElementById('cfg-fb-url').value,
-                "youtube_url": document.getElementById('cfg-yt-url').value,
-                "instagram_url": document.getElementById('cfg-ig-url').value,
-                "custom_link": document.getElementById('cfg-custom-url').value,
-                "fallback_stream_url": document.getElementById('cfg-stream-fallback').value,
-                "hls_stream_url": document.getElementById('cfg-hls-url').value,
-                "fallback_timeout": parseInt(document.getElementById('cfg-fallback-timeout').value) || 30,
-                "stream_mode": document.getElementById('cfg-stream-mode').value,
-                "latest_version_code": parseInt(document.getElementById('cfg-version-code').value) || 1,
-                "accent_color": document.getElementById('cfg-accent-color').value,
-                "apk_url": document.getElementById('cfg-apk-url').value,
-                "update_message": document.getElementById('cfg-update-msg').value,
-                "request_song_message": document.getElementById('cfg-request-msg').value,
-                "status_message": document.getElementById('cfg-status-msg').value,
-                "popup_id": document.getElementById('cfg-popup-id').value,
-                "popup_title": document.getElementById('cfg-popup-title').value,
-                "popup_message": document.getElementById('cfg-popup-msg').value,
-                "popup_image_url": document.getElementById('cfg-popup-img').value,
-                "popup_url": document.getElementById('cfg-popup-url').value,
-                "programs": []
             };
 
-            const rows = programEditList.querySelectorAll('.program-edit-item');
-            rows.forEach(row => {
-                const b = row.querySelectorAll('input');
-                if (b.length >= 4) {
-                    newConfig.programs.push({
-                        time: b[0].value,
-                        endTime: b[1].value,
-                        title: b[2].value,
-                        rj: b[3].value
-                    });
-                }
-            });
-
-            const saveUrl = (activeServerUrl || SERVER_LIST[0]) + '/config';
-            fetch(saveUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(newConfig)
-            }).then(res => {
-                if (res.ok) {
-                    config = newConfig;
-                    applyConfig();
-                    adminModal.style.display = 'none';
-                    alert("STATION SYNCED! ✓\nAll listeners and the Android App are now updated.");
-                }
-            });
+            trigger.addEventListener('mousedown', handleSecretClick);
+            trigger.addEventListener('touchstart', handleSecretClick, {passive: true});
         }
 
-        function adminClearChat() {
-            if (!confirm('⚠️ Clear ALL chat messages?\n\nThis cannot be undone and will clear chat for all users.')) return;
-            if (socket && socket.connected) {
-                socket.emit('clear_chat', { adminUser: 'Admin Portal' });
-                alert('✅ Chat cleared successfully!');
-            } else {
-                alert('❌ Not connected to chat server. Make sure the server is running.');
-            }
+        // --- GLOBAL RANDOM LIGHTNING SYSTEM ---
+        function triggerLightning() {
+            const body = document.body;
+            
+            // Add flash class (now only affects the background scene)
+            body.classList.add('flash-active');
+            
+            // Remove after animation completes (1.8 seconds)
+            setTimeout(() => {
+                body.classList.remove('flash-active');
+            }, 1800);
+
+            // Schedule next flash (between 3 and 5 minutes)
+            const nextFlash = (Math.random() * (300000 - 180000) + 180000); 
+            setTimeout(triggerLightning, nextFlash);
         }
+
+        // Start the cycle with an initial delay
+        setTimeout(triggerLightning, 5000); // First flash after 5 seconds for immediate WOW
     </script>
 </body>
-
 </html>
